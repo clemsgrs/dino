@@ -11,13 +11,12 @@ import torch.distributed as dist
 import torch.backends.cudnn as cudnn
 
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional, Any
 from sklearn import metrics
-from omegaconf import DictConfig
 from torchvision import transforms
+from torchvision.datasets.folder import default_loader
 
 import dino.models.vision_transformer as vits
-from dino.data import ImagePretrainingDataset
 
 
 def is_dist_avail_and_initialized():
@@ -38,10 +37,32 @@ def is_main_process():
     return get_rank() == 0
 
 
-class ReturnIndexDataset(ImagePretrainingDataset):
-    def __getitem__(self, idx):
-        img, label = super(ReturnIndexDataset, self).__getitem__(idx)
+class ReturnIndexDataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        tiles_df: pd.DataFrame,
+        transform: Optional[Callable] = None,
+        loader: Callable[[str], Any] = default_loader,
+        label_name: Optional[str] = None,
+    ):
+        self.df = tiles_df
+        self.transform = transform
+        self.loader = loader
+        self.label_name = label_name
+
+    def __getitem__(self, idx: int):
+        row = self.df.loc[idx]
+        path = row.tile_path
+        img = self.loader(path)
+        if self.transform is not None:
+            img = self.transform(img)
+        label = -1
+        if self.label_name is not None:
+            label = row[self.label_name]
         return idx, img, label
+
+    def __len__(self):
+        return len(self.df)
 
 
 def prepare_data(
@@ -433,12 +454,7 @@ def knn_classifier(
     return acc, auc
 
 
-@hydra.main(
-    version_base="1.2.0",
-    config_path="../config/pretraining",
-    config_name="knn",
-)
-def main(cfg: DictConfig):
+def main(cfg):
     distributed = torch.cuda.device_count() > 1
     if distributed:
         torch.distributed.init_process_group(backend="nccl")
@@ -511,4 +527,5 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+
     main()

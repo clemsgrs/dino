@@ -14,8 +14,6 @@ def write_config(cfg, output_dir, name="config.yaml"):
 
 
 def get_cfg_from_args(args):
-    args.output_dir = os.path.abspath(args.output_dir)
-    args.opts += [f"train.output_dir={args.output_dir}"]
     if args.level == "patch":
         default_cfg = OmegaConf.create(patch_default_config)
     elif args.level == "region":
@@ -23,5 +21,5 @@ def get_cfg_from_args(args):
     else:
         raise KeyError(f"Level should be in ['patch', 'region'] (provided level: {args.level})")
     cfg = OmegaConf.load(args.config_file)
-    cfg = OmegaConf.merge(default_cfg, cfg, OmegaConf.from_cli(args.opts))
+    cfg = OmegaConf.merge(default_cfg, cfg)
     return cfg

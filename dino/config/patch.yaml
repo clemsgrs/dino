@@ -2,8 +2,12 @@ train:
   dataset_path: Pathology:root=/root/data
   batch_size_per_gpu: 8
   pct:
-  output_dir:
+  output_dir: 'output'
+  experiment_name: 'patch'
   save_every: 5 # save checkpoint every x epochs
+  seed: 0
+  resume: False
+  resume_from_checkpoint:
 tune:
   tune_every: # leave blank if you don't want to use early stopping mechanism
   early_stopping:
@@ -41,6 +45,11 @@ optim:
   warmup_epochs: 3  # number of epochs for the linear learning-rate warm up.
   clip_grad: 3.0  # maximal parameter gradient norm if using gradient clipping ; clipping with norm .3 ~ 1.0 can help optimization for larger ViT architectures. 0 for disabling
   freeze_last_layer_epochs: 1 # number of epochs during which we keep the output layer fixed ; typically doing so during the first epoch helps training ; try increasing this value if the loss does not decrease
+  lr_scheduler:
+    name: cosine
+    min_lr: 1e-6 # target LR at the end of optimization ; we use a cosine LR schedule with linear warmup
+    weight_decay: 0.04 # initial value of the weight decay ; with ViT, a smaller value at the beginning of training works well
+    weight_decay_end: 0.4 # final value of the weight decay ; we use a cosine schedule for WD and using a larger decay by the end of training improves performance for ViTs
 crops:
   global_crops_scale:
     - 0.4

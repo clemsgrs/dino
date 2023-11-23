@@ -74,13 +74,13 @@ def main(args):
 
     write_config(cfg, cfg.train.output_dir)
 
-    fix_random_seeds(cfg.seed)
+    fix_random_seeds(cfg.train.seed)
     cudnn.benchmark = True
 
-    output_dir = Path(cfg.output_dir, cfg.experiment_name, run_id)
+    output_dir = Path(cfg.train.output_dir, cfg.train.experiment_name, run_id)
     snapshot_dir = Path(output_dir, "snapshots")
     features_dir = Path(output_dir, "features")
-    if not cfg.resume and is_main_process():
+    if not cfg.train.resume and is_main_process():
         if output_dir.exists():
             print(f"WARNING: {output_dir} already exists! Deleting its content...")
             shutil.rmtree(output_dir)
@@ -131,9 +131,9 @@ def main(args):
         target_transform=lambda _: (),
     )
 
-    if cfg.training.pct:
-        print(f"Pre-training on {cfg.training.pct*100}% of the data")
-        nsample = int(cfg.training.pct * len(dataset))
+    if cfg.train.pct:
+        print(f"Pre-training on {cfg.train.pct*100}% of the data")
+        nsample = int(cfg.train.pct * len(dataset))
         idxs = random.sample(range(len(dataset)), k=nsample)
         dataset = torch.utils.data.Subset(dataset, idxs)
 
@@ -149,7 +149,7 @@ def main(args):
     data_loader = torch.utils.data.DataLoader(
         dataset,
         sampler=sampler,
-        batch_size=cfg.training.batch_size_per_gpu,
+        batch_size=cfg.train.batch_size_per_gpu,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
@@ -244,7 +244,7 @@ def main(args):
         cfg.optim.epochs >= cfg.optim.warmup_epochs
     ), f"nepochs ({cfg.optim.epochs}) must be greater than or equal to warmup_epochs ({cfg.optim.warmup_epochs})"
     base_lr = (
-        cfg.optim.lr * (cfg.training.batch_size_per_gpu * get_world_size()) / 256.0
+        cfg.optim.lr * (cfg.train.batch_size_per_gpu * get_world_size()) / 256.0
     )
     lr_schedule = cosine_scheduler(
         base_lr,
@@ -286,8 +286,8 @@ def main(args):
             if is_main_process():
                 print(f"Resuming training from snapshot at epoch {epochs_run}")
 
-    elif cfg.resume:
-        ckpt_path = Path(cfg.resume_from_checkpoint)
+    elif cfg.train.resume:
+        ckpt_path = Path(cfg.train.resume_from_checkpoint)
         epochs_run = resume_from_checkpoint(
             ckpt_path,
             verbose=(gpu_id in [-1, 0]),

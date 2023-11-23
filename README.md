@@ -32,7 +32,7 @@ In the following python commands, make sure to replace `{gpu}` with the number o
 Distributed pretraining of a vanilla ViT-S/16 :
 
 ```bash
-python3 -m torch.distributed.run --nproc_per_node={gpu} dino/patch.py
+python3 -m torch.distributed.run --nproc_per_node={gpu} dino/patch.py --config-file dino/config/patch.yaml
 ```
 
 
@@ -41,5 +41,5 @@ python3 -m torch.distributed.run --nproc_per_node={gpu} dino/patch.py
 Distributed pretraining of a ViT-S/4096_256 :
 
 ```bash
-python3 -m torch.distributed.run --nproc_per_node={gpu} dino/region.py
+python3 -m torch.distributed.run --nproc_per_node={gpu} dino/region.py --config-file dino/config/region.yaml
 ```
