@@ -11,6 +11,7 @@ import random
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
+import multiprocessing as mp
 
 from pathlib import Path
 from omegaconf import DictConfig
@@ -95,11 +96,15 @@ def main(cfg: DictConfig):
         sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
     else:
         sampler = torch.utils.data.RandomSampler(dataset)
+
+    num_workers = min(mp.cpu_count(), cfg.speed.num_workers)
+    if "SLURM_JOB_CPUS_PER_NODE" in os.environ:
+        num_workers = min(num_workers, int(os.environ["SLURM_JOB_CPUS_PER_NODE"]))
     data_loader = torch.utils.data.DataLoader(
         dataset,
         sampler=sampler,
         batch_size=cfg.training.batch_size_per_gpu,
-        num_workers=cfg.speed.num_workers,
+        num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
     )

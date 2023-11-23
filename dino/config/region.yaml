@@ -1,6 +1,9 @@
-data_dir: '/data/pathology/projects/ais-cap/code/git/clemsgrs/hipt/output/panda_radboud/dino/features/2048_local/1em3x51n/features'
-output_dir: '/data/pathology/projects/ais-cap/code/git/clemsgrs/hipt/output/panda_radboud/dino'
+data_dir: '/data/pathology/projects/ais-cap/code/git/clemsgrs/hipt/output/panda/feature_extraction/9x9i02us/region'
+
+output_dir: 'output/panda'
 experiment_name: 'region'
+
+fold: 0
 
 start_from_checkpoint:
 resume: False
@@ -9,7 +12,7 @@ seed: 0
 
 model:
   arch: 'vit4k_xs'
-  region_size: 2048
+  region_size: 1024
   patch_size: 256
   out_dim: 65536 # dimensionality of the DINO head output. For complex and large datasets large values (like 65k) work well
   norm_last_layer: False # whether or not to weight normalize the last layer of the DINO head ; not normalizing leads to better performance but can make the training unstable.
@@ -25,7 +28,7 @@ training:
   nepochs: 125
   warmup_epochs: 10 # number of epochs for the linear learning-rate warm up.
   freeze_last_layer: 1 # number of epochs during which we keep the output layer fixed ; typically doing so during the first epoch helps training ; try increasing this value if the loss does not decrease
-  batch_size_per_gpu: 128
+  batch_size_per_gpu: 16
   clip_grad: 3.0 # maximal parameter gradient norm if using gradient clipping ; clipping with norm .3 ~ 1.0 can help optimization for larger ViT architectures. 0 for disabling
   pct:
 
@@ -46,17 +49,17 @@ aug:
 
 speed:
   use_fp16: True # whether or not to use half precision for training ; improves training time and memory requirements, but can provoke instability and slight decay of performance ; we recommend disabling mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs
-  num_workers: 4
+  num_workers: 8
 
 logging:
   save_snapshot_every: 10 # save checkpoint every x epochs
 
 wandb:
-  enable: True
-  project: 'hipt'
-  username: 'clemsg'
+  enable: False
+  project: 'vision'
+  username: 'vlfm'
   exp_name: '${experiment_name}'
-  tags:
+  tags: ['dino', 'region', '${model.arch}']
   dir: '/home/user'
   group:
   to_log: ['loss']

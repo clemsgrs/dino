@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 import pandas as pd
+import multiprocessing as mp
 
 from pathlib import Path
 from omegaconf import DictConfig
@@ -83,15 +84,21 @@ def main(cfg: DictConfig):
 
     # ============ preparing tuning data ============
     if is_main_process() and cfg.early_stopping.tune_every:
+
         # only do it from master rank as tuning is not being run distributed for now
         train_df = pd.read_csv(cfg.early_stopping.downstream.train_csv)
         test_df = pd.read_csv(cfg.early_stopping.downstream.test_csv)
+
+        num_workers = min(mp.cpu_count(), cfg.early_stopping.downstream.num_workers)
+        if "SLURM_JOB_CPUS_PER_NODE" in os.environ:
+            num_workers = min(num_workers, int(os.environ["SLURM_JOB_CPUS_PER_NODE"]))
+
         downstream_train_loader, downstream_test_loader = prepare_data(
             train_df,
             test_df,
             cfg.early_stopping.downstream.batch_size_per_gpu,
             False,
-            cfg.early_stopping.downstream.num_workers,
+            num_workers,
             cfg.early_stopping.downstream.label_name,
         )
         print(
@@ -122,11 +129,15 @@ def main(cfg: DictConfig):
         sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
     else:
         sampler = torch.utils.data.RandomSampler(dataset)
+
+    num_workers = min(mp.cpu_count(), cfg.speed.num_workers)
+    if "SLURM_JOB_CPUS_PER_NODE" in os.environ:
+        num_workers = min(num_workers, int(os.environ["SLURM_JOB_CPUS_PER_NODE"]))
     data_loader = torch.utils.data.DataLoader(
         dataset,
         sampler=sampler,
         batch_size=cfg.training.batch_size_per_gpu,
-        num_workers=cfg.speed.num_workers,
+        num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
     )

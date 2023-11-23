@@ -1,12 +1,12 @@
-data_dir: '/data/pathology/projects/ais-cap/dataset/witali-liver/hipt/dino/patch_256_pretraining'
+data_dir: '/data/pathology/projects/ais-cap/dataset/panda/hipt/dino/patch_256_pretraining'
 
-output_dir: '/data/pathology/projects/ais-cap/code/git/clemsgrs/hipt/output/witali-liver/dino'
+output_dir: 'output/panda'
 experiment_name: 'patch'
 
+seed: 0
 start_from_checkpoint:
 resume: False
 resume_from_checkpoint: 'latest.pth'
-seed: 0
 
 model:
   arch: 'vit_small'
@@ -22,25 +22,26 @@ model:
 
 # training/optimization parameters
 training:
-  nepochs: 100
-  warmup_epochs: 10 # number of epochs for the linear learning-rate warm up.
+  nepochs: 50
+  warmup_epochs: 3 # number of epochs for the linear learning-rate warm up.
   freeze_last_layer: 1 # number of epochs during which we keep the output layer fixed ; typically doing so during the first epoch helps training ; try increasing this value if the loss does not decrease
-  batch_size_per_gpu: 128
+  batch_size_per_gpu: 8
   clip_grad: 3.0 # maximal parameter gradient norm if using gradient clipping ; clipping with norm .3 ~ 1.0 can help optimization for larger ViT architectures. 0 for disabling
   pct:
 
 early_stopping:
-  tune_every: 5 # leave blank if you don't want to use early stopping mechanism
+  enable: True
+  tune_every: 1 # leave blank if you don't want to use early stopping mechanism
   tracking: 'auc'
   min_max: 'max'
   patience: 10
   min_epoch: 30
-  save_every: 10 # save checkpoint every x epochs
+  save_every: 5 # save checkpoint every x epochs
   downstream:
-    train_csv: '/data/pathology/projects/ais-cap/dataset/witali-liver/hipt/dino/downstream_task/2-class/train.csv'
-    test_csv: '/data/pathology/projects/ais-cap/dataset/witali-liver/hipt/dino/downstream_task/2-class/test.csv'
+    train_csv: '/data/pathology/projects/ais-cap/dataset/panda/hipt/dino/downstream_task/2-class/5-fold/fold_4/train.csv'
+    test_csv: '/data/pathology/projects/ais-cap/dataset/panda/hipt/dino/downstream_task/2-class/5-fold/fold_4/test.csv'
     label_name: 'label'
-    batch_size_per_gpu: 128
+    batch_size_per_gpu: 8
     num_workers: 4
   knn:
     k: 20
@@ -74,11 +75,11 @@ speed:
   num_workers: 4
 
 wandb:
-  enable: True
-  project: 'hipt'
-  username: 'clemsg'
+  enable: False
+  project: 'vision'
+  username: 'vlfm'
   exp_name: '${experiment_name}'
-  tags:
+  tags: ['dino', 'patch', '${model.arch}']
   dir: '/home/user'
   group:
   to_log: ['loss']
