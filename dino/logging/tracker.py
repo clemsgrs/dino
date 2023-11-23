@@ -1,4 +1,4 @@
-import wandb
+import dino.logging.tracker as tracker
 import subprocess
 
 from pathlib import Path
@@ -51,7 +51,7 @@ def initialize_wandb(
         tags = [str(t) for t in cfg.wandb.tags]
     config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     if cfg.wandb.resume_id:
-        run = wandb.init(
+        run = tracker.init(
             project=cfg.wandb.project,
             entity=cfg.wandb.username,
             name=cfg.wandb.exp_name,
@@ -63,7 +63,7 @@ def initialize_wandb(
             resume="must",
         )
     else:
-        run = wandb.init(
+        run = tracker.init(
             project=cfg.wandb.project,
             entity=cfg.wandb.username,
             name=cfg.wandb.exp_name,
@@ -76,7 +76,7 @@ def initialize_wandb(
     d = OmegaConf.to_container(cfg, resolve=True)
     with open(config_file_path, "w+") as f:
         write_dictconfig(d, f)
-        wandb.save(str(config_file_path))
+        tracker.save(str(config_file_path))
         f.close()
     return run
 
@@ -92,5 +92,5 @@ def update_log_dict(
         to_log = list(results.keys())
     for r, v in results.items():
         if r in to_log:
-            wandb.define_metric(f"{prefix}/{r}", step_metric=step)
+            tracker.define_metric(f"{prefix}/{r}", step_metric=step)
             log_dict.update({f"{prefix}/{r}": v})
