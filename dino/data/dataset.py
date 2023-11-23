@@ -41,29 +41,20 @@ class ImagePretrainingDataset(torch.utils.data.Dataset):
         return len(self.df)
 
 
-class ImageFolderWithNameDataset(datasets.ImageFolder):
+class HierarchicalPretrainingDataset(torch.utils.data.Dataset):
     def __init__(
         self,
-        root: str,
-        transform: Optional[Callable] = None,
+        features_dir: str,
+        transform: Callable,
     ):
-        super().__init__(
-            root,
-            transform,
-        )
+        self.features_list = [f for f in Path(features_dir).glob("*.pt")]
+        self.transform = transform
 
     def __getitem__(self, idx: int):
-        """
-        Args:
-            idx (int): index
+        f = torch.load(self.features_list[idx])
+        f = self.transform(f)
+        label = torch.zeros(1, 1)
+        return f, label
 
-        Returns:
-            tuple: (sample, target) where target is class_index of the target class.
-        """
-        path, target = self.samples[idx]
-        fname = Path(path).stem
-        sample = self.loader(path)
-        if self.transform is not None:
-            sample = self.transform(sample)
-
-        return sample, fname
+    def __len__(self):
+        return len(self.features_list)

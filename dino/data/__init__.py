@@ -1,2 +1,2 @@
-from .dataset import HierarchicalPretrainingDataset
+from .dataset import ImagePretrainingDataset, HierarchicalPretrainingDataset
 from .augmentations import PatchDataAugmentationDINO, RegionDataAugmentationDINO

@@ -22,7 +22,7 @@ from dino.data import RegionDataAugmentationDINO, HierarchicalPretrainingDataset
 from dino.models import MultiCropWrapper
 from dino.distributed import get_world_size, is_main_process
 from dino.utils import train_one_epoch, cosine_scheduler, fix_random_seeds, has_batchnorms, get_params_groups, compute_time, start_from_checkpoint, resume_from_checkpoint
-from dino.logging import initialize_wandb, update_log_dict
+from dino.log import initialize_wandb, update_log_dict
 
 
 @hydra.main(

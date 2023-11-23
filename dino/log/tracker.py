@@ -1,4 +1,3 @@
-import dino.logging.tracker as tracker
 import subprocess
 
 from pathlib import Path

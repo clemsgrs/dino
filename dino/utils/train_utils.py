@@ -9,7 +9,7 @@ from collections import defaultdict
 
 import dino.models.vision_transformer as vits
 
-from dino.logging import MetricLogger
+from dino.log import MetricLogger
 from dino.distributed import is_main_process
 from dino.eval.knn import extract_multiple_features, knn_classifier
 from dino.utils.utils import load_weights, clip_gradients, cancel_gradients_last_layer
