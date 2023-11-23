@@ -16,12 +16,11 @@ import multiprocessing as mp
 
 from pathlib import Path
 from omegaconf import DictConfig
-from torchvision import datasets
 
 import dino.models.vision_transformer as vits
 
 from dino.components import DINOLoss, EarlyStoppingDINO
-from dino.data import PatchDataAugmentationDINO
+from dino.data import PatchDataAugmentationDINO, make_dataset
 from dino.eval import prepare_data
 from dino.models import MultiCropWrapper
 from dino.distributed import get_world_size, is_main_process
@@ -75,7 +74,7 @@ def main(cfg: DictConfig):
         else:
             output_dir.mkdir(parents=True, exist_ok=True)
         snapshot_dir.mkdir(exist_ok=True, parents=True)
-        if cfg.early_stopping.tune_every and cfg.early_stopping.knn.save_features:
+        if cfg.tune.tune_every and cfg.tune.knn.save_features:
             features_dir.mkdir(exist_ok=True, parents=True)
 
     # preparing data
@@ -83,41 +82,40 @@ def main(cfg: DictConfig):
         print(f"Loading data...")
 
     # ============ preparing tuning data ============
-    if is_main_process() and cfg.early_stopping.tune_every:
+    if is_main_process() and cfg.tune.tune_every:
 
         # only do it from master rank as tuning is not being run distributed for now
-        train_df = pd.read_csv(cfg.early_stopping.downstream.train_csv)
-        test_df = pd.read_csv(cfg.early_stopping.downstream.test_csv)
+        train_df = pd.read_csv(cfg.tune.knn.train_csv)
+        test_df = pd.read_csv(cfg.tune.knn.test_csv)
 
-        num_workers = min(mp.cpu_count(), cfg.early_stopping.downstream.num_workers)
+        num_workers = min(mp.cpu_count(), cfg.tune.knn.num_workers)
         if "SLURM_JOB_CPUS_PER_NODE" in os.environ:
             num_workers = min(num_workers, int(os.environ["SLURM_JOB_CPUS_PER_NODE"]))
 
         downstream_train_loader, downstream_test_loader = prepare_data(
             train_df,
             test_df,
-            cfg.early_stopping.downstream.batch_size_per_gpu,
+            cfg.tune.knn.batch_size_per_gpu,
             False,
             num_workers,
-            cfg.early_stopping.downstream.label_name,
+            cfg.tune.knn.label_name,
         )
         print(
             f"Tuning data loaded with {len(downstream_train_loader.dataset)} train patches and {len(downstream_test_loader.dataset)} test patches."
         )
 
-    transform = PatchDataAugmentationDINO(
-        cfg.aug.global_crops_scale,
-        cfg.aug.local_crops_scale,
-        cfg.aug.local_crops_number,
+    data_transform = PatchDataAugmentationDINO(
+        cfg.crops.global_crops_scale,
+        cfg.crops.local_crops_scale,
+        cfg.crops.local_crops_number,
     )
 
     # ============ preparing training data ============
-    dataset_loading_start_time = time.time()
-    dataset = datasets.ImageFolder(cfg.data_dir, transform=transform)
-    dataset_loading_end_time = time.time() - dataset_loading_start_time
-    total_time_str = str(datetime.timedelta(seconds=int(dataset_loading_end_time)))
-    if is_main_process():
-        print(f"Pretraining data loaded in {total_time_str} ({len(dataset)} patches)")
+    dataset = make_dataset(
+        dataset_str=cfg.train.dataset_path,
+        transform=data_transform,
+        target_transform=lambda _: (),
+    )
 
     if cfg.training.pct:
         print(f"Pre-training on {cfg.training.pct*100}% of the data")
@@ -133,6 +131,7 @@ def main(cfg: DictConfig):
     num_workers = min(mp.cpu_count(), cfg.speed.num_workers)
     if "SLURM_JOB_CPUS_PER_NODE" in os.environ:
         num_workers = min(num_workers, int(os.environ["SLURM_JOB_CPUS_PER_NODE"]))
+
     data_loader = torch.utils.data.DataLoader(
         dataset,
         sampler=sampler,
@@ -145,11 +144,11 @@ def main(cfg: DictConfig):
     # building student and teacher networks
     if is_main_process():
         print(f"Building student and teacher networks...")
-    student = vits.__dict__[cfg.model.arch](
-        patch_size=cfg.model.patch_size,
-        drop_path_rate=cfg.model.drop_path_rate,
+    student = vits.__dict__[cfg.student.arch](
+        patch_size=cfg.student.patch_size,
+        drop_path_rate=cfg.student.drop_path_rate,
     )
-    teacher = vits.__dict__[cfg.model.arch](patch_size=cfg.model.patch_size)
+    teacher = vits.__dict__[cfg.student.arch](patch_size=cfg.student.patch_size)
     embed_dim = student.embed_dim
 
     # multi-crop wrapper handles forward with inputs of different resolutions
@@ -157,17 +156,17 @@ def main(cfg: DictConfig):
         student,
         vits.DINOHead(
             embed_dim,
-            cfg.model.out_dim,
-            use_bn=cfg.model.use_bn_in_head,
-            norm_last_layer=cfg.model.norm_last_layer,
+            cfg.student.out_dim,
+            use_bn=cfg.student.use_bn_in_head,
+            norm_last_layer=cfg.student.norm_last_layer,
         ),
     )
     teacher = MultiCropWrapper(
         teacher,
         vits.DINOHead(
             embed_dim,
-            cfg.model.out_dim,
-            use_bn=cfg.model.use_bn_in_head,
+            cfg.student.out_dim,
+            use_bn=cfg.student.use_bn_in_head,
         ),
     )
 
@@ -205,14 +204,14 @@ def main(cfg: DictConfig):
         p.requires_grad = False
 
     # total number of crops = 2 global crops + local_crops_number
-    crops_number = cfg.aug.local_crops_number + 2
+    crops_number = cfg.crops.local_crops_number + 2
     dino_loss = DINOLoss(
-        cfg.model.out_dim,
+        cfg.student.out_dim,
         crops_number,
-        cfg.model.warmup_teacher_temp,
-        cfg.model.teacher_temp,
-        cfg.model.warmup_teacher_temp_epochs,
-        cfg.training.nepochs,
+        cfg.teacher.warmup_teacher_temp,
+        cfg.teacher.teacher_temp,
+        cfg.teacher.warmup_teacher_temp_epochs,
+        cfg.optim.epochs,
     )
     if distributed:
         dino_loss = dino_loss.to(gpu_id)
@@ -228,27 +227,27 @@ def main(cfg: DictConfig):
         fp16_scaler = torch.cuda.amp.GradScaler()
 
     assert (
-        cfg.training.nepochs >= cfg.training.warmup_epochs
-    ), f"nepochs ({cfg.training.nepochs}) must be greater than or equal to warmup_epochs ({cfg.training.warmup_epochs})"
+        cfg.optim.epochs >= cfg.optim.warmup_epochs
+    ), f"nepochs ({cfg.optim.epochs}) must be greater than or equal to warmup_epochs ({cfg.optim.warmup_epochs})"
     base_lr = (
         cfg.optim.lr * (cfg.training.batch_size_per_gpu * get_world_size()) / 256.0
     )
     lr_schedule = cosine_scheduler(
         base_lr,
         cfg.optim.lr_scheduler.min_lr,
-        cfg.training.nepochs,
+        cfg.optim.epochs,
         len(data_loader),
-        warmup_epochs=cfg.training.warmup_epochs,
+        warmup_epochs=cfg.optim.warmup_epochs,
     )
     wd_schedule = cosine_scheduler(
         cfg.optim.lr_scheduler.weight_decay,
         cfg.optim.lr_scheduler.weight_decay_end,
-        cfg.training.nepochs,
+        cfg.optim.epochs,
         len(data_loader),
     )
     # momentum parameter is increased to 1. during training with a cosine schedule
     momentum_schedule = cosine_scheduler(
-        cfg.model.momentum_teacher, 1, cfg.training.nepochs, len(data_loader)
+        cfg.teacher.momentum_teacher, 1, cfg.optim.epochs, len(data_loader)
     )
     if is_main_process():
         print(f"Models built, kicking off training")
@@ -288,12 +287,12 @@ def main(cfg: DictConfig):
             print(f"Resuming training from checkpoint at epoch {epochs_run}")
 
     early_stopping = EarlyStoppingDINO(
-        cfg.early_stopping.tracking,
-        cfg.early_stopping.min_max,
-        cfg.early_stopping.patience,
-        cfg.early_stopping.min_epoch,
+        cfg.tune.early_stopping.tracking,
+        cfg.tune.early_stopping.min_max,
+        cfg.tune.early_stopping.patience,
+        cfg.tune.early_stopping.min_epoch,
         checkpoint_dir=snapshot_dir,
-        save_every=cfg.early_stopping.save_every,
+        save_every=cfg.train.save_every,
         verbose=True,
     )
 
@@ -301,13 +300,13 @@ def main(cfg: DictConfig):
     start_time = time.time()
 
     with tqdm.tqdm(
-        range(epochs_run, cfg.training.nepochs),
+        range(epochs_run, cfg.optim.epochs),
         desc=(f"DINO Pretraining"),
         unit=" epoch",
         ncols=100,
         leave=True,
         initial=epochs_run,
-        total=cfg.training.nepochs,
+        total=cfg.optim.epochs,
         file=sys.stdout,
         position=0,
         disable=not is_main_process(),
@@ -332,10 +331,10 @@ def main(cfg: DictConfig):
                 wd_schedule,
                 momentum_schedule,
                 epoch,
-                cfg.training.nepochs,
+                cfg.optim.epochs,
                 fp16_scaler,
-                cfg.training.clip_grad,
-                cfg.training.freeze_last_layer,
+                cfg.optim.clip_grad,
+                cfg.optim.freeze_last_layer_epochs,
                 gpu_id,
             )
 
@@ -356,8 +355,8 @@ def main(cfg: DictConfig):
             # only run tuning on rank 0, otherwise one has to take care of gathering knn metrics from multiple gpus
             tune_results = None
             if (
-                cfg.early_stopping.tune_every
-                and epoch % cfg.early_stopping.tune_every == 0
+                cfg.tune.tune_every
+                and epoch % cfg.tune.tune_every == 0
                 and is_main_process()
             ):
                 tune_results = tune_one_epoch(
@@ -367,14 +366,14 @@ def main(cfg: DictConfig):
                     downstream_train_loader,
                     downstream_test_loader,
                     features_dir,
-                    cfg.model.arch,
-                    cfg.model.patch_size,
-                    cfg.model.drop_path_rate,
-                    cfg.early_stopping.knn.k,
-                    cfg.early_stopping.knn.temperature,
+                    cfg.student.arch,
+                    cfg.student.patch_size,
+                    cfg.student.drop_path_rate,
+                    cfg.tune.knn.nb_knn,
+                    cfg.tune.knn.temperature,
                     False,
-                    cfg.early_stopping.knn.save_features,
-                    cfg.early_stopping.knn.use_cuda,
+                    cfg.tune.knn.save_features,
+                    cfg.tune.knn.use_cuda,
                 )
 
                 if cfg.wandb.enable and is_main_process():
@@ -382,12 +381,12 @@ def main(cfg: DictConfig):
 
             if is_main_process():
                 early_stopping(epoch, tune_results, snapshot)
-                if early_stopping.early_stop and cfg.early_stopping.enable:
+                if early_stopping.early_stop and cfg.tune.enable:
                     stop = True
 
             if stop:
                 tqdm.tqdm.write(
-                    f"Stopping early because best {cfg.early_stopping.tracking} was reached {cfg.early_stopping.patience} epochs ago"
+                    f"Stopping early because best {cfg.tune.tracking} was reached {cfg.tune.early_stopping.patience} epochs ago"
                 )
                 break
 
@@ -395,8 +394,8 @@ def main(cfg: DictConfig):
             if is_main_process():
                 save_path = Path(snapshot_dir, f"epoch_{epoch:03}.pt")
                 if (
-                    cfg.early_stopping.save_every
-                    and epoch % cfg.early_stopping.save_every == 0
+                    cfg.train.save_every
+                    and epoch % cfg.train.save_every == 0
                     and not save_path.is_file()
                 ):
                     torch.save(snapshot, save_path)
@@ -416,7 +415,7 @@ def main(cfg: DictConfig):
             epoch_mins, epoch_secs = compute_time(epoch_start_time, epoch_end_time)
             if is_main_process():
                 tqdm.tqdm.write(
-                    f"End of epoch {epoch+1}/{cfg.training.nepochs} \t Time Taken:  {epoch_mins}m {epoch_secs}s"
+                    f"End of epoch {epoch+1}/{cfg.optim.epochs} \t Time Taken:  {epoch_mins}m {epoch_secs}s"
                 )
 
             # ensure other gpus wait until gpu_0 is finished with tuning before starting next training iteration
