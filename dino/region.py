@@ -5,7 +5,7 @@ import wandb
 import datetime
 import time
 import json
-import hydra
+import argparse
 import shutil
 import random
 import torch
@@ -14,7 +14,6 @@ import torch.backends.cudnn as cudnn
 import multiprocessing as mp
 
 from pathlib import Path
-from omegaconf import DictConfig
 
 import dino.models.vision_transformer as vits
 
@@ -23,13 +22,21 @@ from dino.data import RegionDataAugmentationDINO, HierarchicalPretrainingDataset
 from dino.models import MultiCropWrapper
 from dino.distributed import get_world_size, is_main_process
 from dino.utils import train_one_epoch, cosine_scheduler, fix_random_seeds, has_batchnorms, get_params_groups, compute_time, start_from_checkpoint, resume_from_checkpoint
+from dino.utils.config import get_cfg_from_args, write_config
 from dino.log import initialize_wandb, update_log_dict
 
 
-@hydra.main(
-    version_base="1.2.0", config_path="config", config_name="region"
-)
-def main(cfg: DictConfig):
+def get_args_parser(add_help: bool = True):
+    parser = argparse.ArgumentParser("DINO training", add_help=add_help)
+    parser.add_argument("--config-file", default="", metavar="FILE", help="path to config file")
+    parser.add_argument("--level", default="region", type=str)
+    return parser
+
+
+def main(args):
+
+    cfg = get_cfg_from_args(args)
+
     distributed = torch.cuda.device_count() > 1
     if distributed:
         torch.distributed.init_process_group(backend="nccl")
@@ -57,6 +64,13 @@ def main(cfg: DictConfig):
             obj, 0, device=torch.device(f"cuda:{gpu_id}")
         )
         run_id = obj[0]
+
+    output_dir = Path(cfg.train.output_dir, run_id)
+    if is_main_process():
+        output_dir.mkdir(exist_ok=True, parents=True)
+    cfg.train.output_dir = str(output_dir)
+
+    write_config(cfg, cfg.train.output_dir)
 
     fix_random_seeds(cfg.seed)
     cudnn.benchmark = True
@@ -359,4 +373,5 @@ def main(cfg: DictConfig):
 
 if __name__ == "__main__":
 
-    main()
+    args = get_args_parser(add_help=True).parse_args()
+    main(args)
