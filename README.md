@@ -36,7 +36,7 @@ You need to wrap up your data in a tarball file:
     tar -cvf pretrain_dataset.tar /path/to/image/folder
     ```
 
-3. infer the auxiliary files `pretrain_entries.npy` and `file_indices.npy`
+3. infer the auxiliary files `pretrain_entries.npy` and `pretrain_file_indices.npy`
 
     ```shell
     python3 scripts/infer_entries.py \
@@ -45,14 +45,14 @@ You need to wrap up your data in a tarball file:
       --prefix pretrain
     ```
 
-    The `entries.npy` file will record:
+    The `pretrain_entries.npy` file will record:
     - a dummy class index (we set it to 0 for all images since we’re not using classes)
     - a unique filename index for each image
     - the start and end offsets of each image within the tarball file
 
-    The `file_indices.npy` file consists in a dictionnary mapping filename index to corresponding filename.
+    The `pretrain_file_indices.npy` file consists in a dictionnary mapping filename index to corresponding filename.
 
-4. dump `pretrain_dataset.tar`, `entries.npy` and `file_indices.npy` in a common folder (e.g. `/root/data`)
+4. dump `pretrain_dataset.tar`, `pretrain_entries.npy` and `pretrain_file_indices.npy` in a common folder (e.g. `/root/data`)
 5. udpate `train.dataset_path` in `dino/config/patch.yaml` (replace `/root/data` with the folder you chose at step 4)
 
 ## Training
