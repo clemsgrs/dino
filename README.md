@@ -23,6 +23,28 @@ Make sure to install the requirements: `pip3 install -r requirements.txt`
 export PYTHONPATH="${PYTHONPATH}:/path/to/your/dino"
 ```
 
+## Data preparation
+
+The dataset you intend to pretrain on should be structured as follow:
+
+```bash
+ROOT_DIR/
+  └──patch_256_pretraining/
+        └──imgs/
+            ├── patch_1.jpg
+            ├── patch_2.jpg
+            └── ...
+  └──region_4096_pretraining/
+      ├── slide_1_region_1.pt
+      ├── slide_1_region_2.pt
+      └── ...
+```
+
+Where:
+- `patch_256_pretraining/imgs/`: directory of patches (e.g. in `.jpg` format) extracted using [HS2P](https://github.com/clemsgrs/hs2p), used to pretrain the first Transformer block (ViT_patch).
+- `region_4096_pretraining/`: directory of pre-extracted region-level features for each region, generated using `python3 dino/extract_features.py`. Each `*.pt` file is a `[npatch × 384]`-sized Tensor, which contains the sequence of pre-extracted ViT_patch features for each `[patch_size × patch_size]` patch in a given region. This folder is used to pretain the intermediate Transformer block (ViT_region).
+
+
 ## Training
 
 In the following python commands, make sure to replace `{gpu}` with the number of gpus available for pretraining.
