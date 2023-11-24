@@ -25,24 +25,32 @@ export PYTHONPATH="${PYTHONPATH}:/path/to/your/dino"
 
 ## Data preparation
 
+### Vanilla pretraining
+
 The dataset you intend to pretrain on should be structured as follow:
 
 ```bash
-ROOT_DIR/
-  └──patch_256_pretraining/
-        └──imgs/
-            ├── patch_1.jpg
-            ├── patch_2.jpg
-            └── ...
-  └──region_4096_pretraining/
-      ├── slide_1_region_1.pt
-      ├── slide_1_region_2.pt
-      └── ...
+patch_pretraining/
+   └──imgs/
+       ├── patch_1.jpg
+       ├── patch_2.jpg
+       └── ...
 ```
 
-Where:
-- `patch_256_pretraining/imgs/`: directory of patches (e.g. in `.jpg` format) extracted using [HS2P](https://github.com/clemsgrs/hs2p), used to pretrain the first Transformer block (ViT_patch).
-- `region_4096_pretraining/`: directory of pre-extracted region-level features for each region, generated using `python3 dino/extract_features.py`. Each `*.pt` file is a `[npatch × 384]`-sized Tensor, which contains the sequence of pre-extracted ViT_patch features for each `[patch_size × patch_size]` patch in a given region. This folder is used to pretain the intermediate Transformer block (ViT_region).
+Where `patch_pretraining/imgs/` is the directory of patches (e.g. in `.jpg` format) extracted using [HS2P](https://github.com/clemsgrs/hs2p), used to pretrain the first Transformer block (ViT_patch).
+
+### Hierarchical pretraining
+
+In case you want to run hierarchical pretraining, you need to structure your data as follow:
+
+```bash
+region_pretraining/
+   ├── slide_1_region_1.pt
+   ├── slide_1_region_2.pt
+   └── ...
+```
+
+Where `region_pretraining/` is the directory of pre-extracted region-level features for each region, generated using `python3 dino/extract_features.py`. Each `*.pt` file is a `[npatch × 384]`-sized Tensor, which contains the sequence of pre-extracted ViT_patch features for each `[patch_size × patch_size]` patch in a given region. This folder is used to pretain the intermediate Transformer block (ViT_region).
 
 
 ## Training
@@ -51,7 +59,8 @@ In the following python commands, make sure to replace `{gpu}` with the number o
 
 ### Vanilla ViT DINO pretraining :sauropod:
 
-Distributed pretraining of a vanilla ViT-S/16 :
+Update the config file `dino/config/patch.yaml` to match your local setup.<br>
+Then kick off distributed pretraining of a vanilla ViT-S/16 :
 
 ```bash
 python3 -m torch.distributed.run --nproc_per_node={gpu} dino/patch.py
@@ -60,7 +69,8 @@ python3 -m torch.distributed.run --nproc_per_node={gpu} dino/patch.py
 
 ### Hierarchical pretraining :t-rex:
 
-Distributed pretraining of a ViT-S/4096_256 :
+Update the config file `dino/config/region.yaml` to match your local setup.<br>
+Then kick off distributed pretraining of a ViT-S/4096_256 :
 
 ```bash
 python3 -m torch.distributed.run --nproc_per_node={gpu} dino/region.py

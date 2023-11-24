@@ -1,6 +1,6 @@
-data_dir: '/data/pathology/projects/ais-cap/dataset/panda/hipt/dino/patch_256_pretraining'
+data_dir: '/path/to/patch_pretraining'
 
-output_dir: 'output/panda'
+output_dir: 'output'
 experiment_name: 'patch'
 
 seed: 0
@@ -30,16 +30,16 @@ training:
   pct:
 
 early_stopping:
-  enable: True
-  tune_every: 1 # leave blank if you don't want to use early stopping mechanism
+  enable: False
+  tune_every: # leave blank if you don't want to use early stopping mechanism
   tracking: 'auc'
   min_max: 'max'
   patience: 10
   min_epoch: 30
   save_every: 5 # save checkpoint every x epochs
   downstream:
-    train_csv: '/data/pathology/projects/ais-cap/dataset/panda/hipt/dino/downstream_task/2-class/5-fold/fold_4/train.csv'
-    test_csv: '/data/pathology/projects/ais-cap/dataset/panda/hipt/dino/downstream_task/2-class/5-fold/fold_4/test.csv'
+    train_csv: ''
+    test_csv: ''
     label_name: 'label'
     batch_size_per_gpu: 8
     num_workers: 4
@@ -76,8 +76,8 @@ speed:
 
 wandb:
   enable: False
-  project: 'vision'
-  username: 'vlfm'
+  project: ''
+  username: ''
   exp_name: '${experiment_name}'
   tags: ['dino', 'patch', '${model.arch}']
   dir: '/home/user'

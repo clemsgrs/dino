@@ -1,6 +1,6 @@
-data_dir: '/data/pathology/projects/ais-cap/code/git/clemsgrs/hipt/output/panda/feature_extraction/9x9i02us/region'
+data_dir: '/path/to/region_pretraining'
 
-output_dir: 'output/panda'
+output_dir: 'output'
 experiment_name: 'region'
 
 fold: 0
@@ -12,7 +12,7 @@ seed: 0
 
 model:
   arch: 'vit4k_xs'
-  region_size: 1024
+  region_size: 4096
   patch_size: 256
   out_dim: 65536 # dimensionality of the DINO head output. For complex and large datasets large values (like 65k) work well
   norm_last_layer: False # whether or not to weight normalize the last layer of the DINO head ; not normalizing leads to better performance but can make the training unstable.
@@ -56,8 +56,8 @@ logging:
 
 wandb:
   enable: False
-  project: 'vision'
-  username: 'vlfm'
+  project: ''
+  username: ''
   exp_name: '${experiment_name}'
   tags: ['dino', 'region', '${model.arch}']
   dir: '/home/user'
