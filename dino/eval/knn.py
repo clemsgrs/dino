@@ -1,7 +1,6 @@
 import os
 import sys
 import tqdm
-import hydra
 import numpy as np
 import pandas as pd
 
@@ -18,63 +17,17 @@ from torchvision.datasets.folder import default_loader
 
 import dino.models.vision_transformer as vits
 
-
-def is_dist_avail_and_initialized():
-    if not dist.is_available():
-        return False
-    if not dist.is_initialized():
-        return False
-    return True
-
-
-def get_rank():
-    if not is_dist_avail_and_initialized():
-        return 0
-    return dist.get_rank()
-
-
-def is_main_process():
-    return get_rank() == 0
-
-
-class ReturnIndexDataset(torch.utils.data.Dataset):
-    def __init__(
-        self,
-        tiles_df: pd.DataFrame,
-        transform: Optional[Callable] = None,
-        loader: Callable[[str], Any] = default_loader,
-        label_name: Optional[str] = None,
-    ):
-        self.df = tiles_df
-        self.transform = transform
-        self.loader = loader
-        self.label_name = label_name
-
-    def __getitem__(self, idx: int):
-        row = self.df.loc[idx]
-        path = row.tile_path
-        img = self.loader(path)
-        if self.transform is not None:
-            img = self.transform(img)
-        label = -1
-        if self.label_name is not None:
-            label = row[self.label_name]
-        return idx, img, label
-
-    def __len__(self):
-        return len(self.df)
+from dino.data import make_dataset
+from dino.distributed import is_main_process
 
 
 def prepare_data(
-    train_df: pd.DataFrame,
-    test_df: pd.DataFrame,
+    cfg,
     batch_size_per_gpu,
     distributed,
     num_workers,
-    label_name: Optional[str] = None,
 ):
-    # ============ preparing data ... ============
-    transform = transforms.Compose(
+    data_transform = transforms.Compose(
         [
             transforms.Resize(256, interpolation=transforms.InterpolationMode.BICUBIC),
             transforms.CenterCrop(224),
@@ -82,32 +35,39 @@ def prepare_data(
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
         ]
     )
-    dataset_train = ReturnIndexDataset(
-        train_df, transform=transform, label_name=label_name
+
+    query_dataset = make_dataset(
+        dataset_str=cfg.tune.knn.query_dataset_path,
+        transform=data_transform,
     )
-    dataset_test = ReturnIndexDataset(
-        test_df, transform=transform, label_name=label_name
+
+    test_dataset = make_dataset(
+        dataset_str=cfg.tune.knn.test_dataset_path,
+        transform=data_transform,
     )
+
     if distributed:
-        sampler = torch.utils.data.DistributedSampler(dataset_train, shuffle=False)
+        sampler = torch.utils.data.DistributedSampler(query_dataset, shuffle=False)
     else:
-        sampler = torch.utils.data.SequentialSampler(dataset_train)
-    data_loader_train = torch.utils.data.DataLoader(
-        dataset_train,
+        sampler = torch.utils.data.SequentialSampler(query_dataset)
+
+    query_data_loader = torch.utils.data.DataLoader(
+        query_dataset,
         sampler=sampler,
         batch_size=batch_size_per_gpu,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=False,
     )
-    data_loader_test = torch.utils.data.DataLoader(
-        dataset_test,
+
+    test_data_loader = torch.utils.data.DataLoader(
+        test_dataset,
         batch_size=batch_size_per_gpu,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=False,
     )
-    return data_loader_train, data_loader_test
+    return query_data_loader, test_data_loader
 
 
 def load_pretrained_weights(model, pretrained_weights, checkpoint_key):
@@ -150,8 +110,7 @@ def multi_scale(samples, model):
 
 
 def extract_feature_pipeline(
-    train_df: pd.DataFrame,
-    test_df: pd.DataFrame,
+    cfg,
     features_dir: str,
     arch: str,
     patch_size: int,
@@ -162,19 +121,16 @@ def extract_feature_pipeline(
     save_features: bool = False,
     use_cuda: bool = True,
     num_workers: int = 10,
-    label_name: Optional[str] = None,
 ):
     # ============ preparing data ... ============
-    data_loader_train, data_loader_test = prepare_data(
-        train_df,
-        test_df,
+    query_data_loader, test_data_loader = prepare_data(
+        cfg,
         batch_size_per_gpu,
         distributed,
         num_workers,
-        label_name,
     )
     print(
-        f"Data loaded with {len(data_loader_train.dataset)} train and {len(data_loader_test.dataset)} eval imgs."
+        f"Data loaded with {len(query_data_loader.dataset)} query and {len(test_data_loader.dataset)} eval imgs."
     )
 
     # ============ building network ... ============
@@ -186,26 +142,26 @@ def extract_feature_pipeline(
     model.eval()
 
     # ============ extract features ... ============
-    print("Extracting features for train set...")
-    train_features, train_labels = extract_features(
-        model, data_loader_train, distributed, use_cuda
+    print("Extracting features for query set...")
+    query_features, query_labels = extract_features(
+        model, query_data_loader, distributed, use_cuda
     )
     print("Extracting features for test set...")
     test_features, test_labels = extract_features(
-        model, data_loader_test, distributed, use_cuda
+        model, test_data_loader, distributed, use_cuda
     )
 
     if is_main_process():
-        train_features = nn.functional.normalize(train_features, dim=1, p=2)
+        query_features = nn.functional.normalize(query_features, dim=1, p=2)
         test_features = nn.functional.normalize(test_features, dim=1, p=2)
 
     # save features and labels
     if save_features and is_main_process():
-        torch.save(train_features.cpu(), Path(features_dir, "train_feat.pt"))
+        torch.save(query_features.cpu(), Path(features_dir, "query_feat.pt"))
         torch.save(test_features.cpu(), Path(features_dir, "test_feat.pt"))
-        torch.save(train_labels.cpu(), Path(features_dir, "train_labels.pt"))
+        torch.save(query_labels.cpu(), Path(features_dir, "query_labels.pt"))
         torch.save(test_labels.cpu(), Path(features_dir, "test_labels.pt"))
-    return train_features, test_features, train_labels, test_labels
+    return query_features, test_features, query_labels, test_labels
 
 
 @torch.no_grad()
@@ -405,14 +361,14 @@ def extract_features(model, loader, distributed, use_cuda=True, multiscale=False
 
 @torch.no_grad()
 def knn_classifier(
-    train_features, train_labels, test_features, test_labels, k, T, num_classes
+    query_features, query_labels, test_features, test_labels, k, T, num_classes
 ):
     acc, total = 0.0, 0
     test_probs = np.empty((0, num_classes))
-    train_features = train_features.t()
+    query_features = query_features.t()
     num_test_images, num_chunks = test_labels.shape[0], min(test_labels.shape[0], 100)
     imgs_per_chunk = num_test_images // num_chunks
-    retrieval_one_hot = torch.zeros(k, num_classes).to(train_features.device)
+    retrieval_one_hot = torch.zeros(k, num_classes).to(query_features.device)
     for idx in range(0, num_test_images, imgs_per_chunk):
         # get the features for test images
         # the use of min ensures we don't compute features more than once if num_test_images is not divisible by num_chunks
@@ -421,9 +377,9 @@ def knn_classifier(
         batch_size = targets.shape[0]
 
         # calculate the dot product and compute top-k neighbors
-        similarity = torch.mm(features, train_features)
+        similarity = torch.mm(features, query_features)
         distances, indices = similarity.topk(k, largest=True, sorted=True)
-        candidates = train_labels.view(1, -1).expand(batch_size, -1)
+        candidates = query_labels.view(1, -1).expand(batch_size, -1)
         retrieved_neighbors = torch.gather(candidates, 1, indices)
 
         retrieval_one_hot.resize_(batch_size * k, num_classes).zero_()
@@ -469,22 +425,19 @@ def main(cfg):
     cudnn.benchmark = True
 
     if cfg.load_features:
-        train_features = torch.load(Path(cfg.features_dir, "train_feat.pt"))
+        query_features = torch.load(Path(cfg.features_dir, "query_feat.pt"))
         test_features = torch.load(Path(cfg.features_dir, "test_feat.pt"))
-        train_labels = torch.load(Path(cfg.features_dir, "train_labels.pt"))
+        query_labels = torch.load(Path(cfg.features_dir, "query_labels.pt"))
         test_labels = torch.load(Path(cfg.features_dir, "test_labels.pt"))
     else:
         # need to extract features !
-        train_df = pd.read_csv(cfg.train_csv)
-        test_df = pd.read_csv(cfg.test_csv)
         (
-            train_features,
+            query_features,
             test_features,
-            train_labels,
+            query_labels,
             test_labels,
         ) = extract_feature_pipeline(
-            train_df,
-            test_df,
+            cfg,
             cfg.features_dir,
             cfg.model.arch,
             cfg.model.patch_size,
@@ -495,23 +448,22 @@ def main(cfg):
             save_features=cfg.save_features,
             use_cuda=cfg.speed.use_cuda,
             num_workers=cfg.speed.num_workers,
-            label_name=cfg.label_name,
         )
 
     if is_main_process():
-        assert len(torch.unique(train_labels)) == len(
+        assert len(torch.unique(query_labels)) == len(
             torch.unique(test_labels)
-        ), "train & test dataset have different number of classes!"
-        num_classes = len(torch.unique(train_labels))
+        ), "query & test dataset have different number of classes!"
+        num_classes = len(torch.unique(query_labels))
         if cfg.speed.use_cuda:
-            train_features, train_labels = train_features.cuda(), train_labels.cuda()
+            query_features, query_labels = query_features.cuda(), query_labels.cuda()
             test_features, test_labels = test_features.cuda(), test_labels.cuda()
 
         print("Features are ready!\nStarting kNN classification.")
         for k in cfg.nb_knn:
             acc, auc = knn_classifier(
-                train_features,
-                train_labels,
+                query_features,
+                query_labels,
                 test_features,
                 test_labels,
                 k,

@@ -6,22 +6,21 @@ train:
   experiment_name: 'patch'
   save_every: 5 # save checkpoint every x epochs
   seed: 0
-  resume: False
+  resume: false
   resume_from_checkpoint:
 tune:
-  tune_every: # leave blank if you don't want to use early stopping mechanism
+  tune_every: 1 # leave blank if you don't want to use early stopping mechanism
   early_stopping:
     enable: false
-    tracking: "auc_20"
+    tracking: 'auc'
     min_max: "max"
     patience: 20
     min_epoch: 30
   knn:
     nb_knn: 20
     temperature: 0.07
-    train_csv: '/data/pathology/projects/ais-cap/dataset/panda/hipt/dino/downstream_task/2-class/5-fold/fold_4/train.csv'
-    test_csv: '/data/pathology/projects/ais-cap/dataset/panda/hipt/dino/downstream_task/2-class/5-fold/fold_4/test.csv'
-    label_name: 'label'
+    query_dataset_path: KNN:root=/root/data:split=QUERY
+    test_dataset_path: KNN:root=/root/data:split=TEST
     batch_size_per_gpu: 256
     num_workers: 8
     save_features: false
@@ -30,9 +29,9 @@ student:
   arch: vit_small
   patch_size: 16
   out_dim: 65536 # dimensionality of the DINO head output. For complex and large datasets large values (like 65k) work well
-  norm_last_layer: False # whether or not to weight normalize the last layer of the DINO head ; not normalizing leads to better performance but can make the training unstable.
+  norm_last_layer: false # whether or not to weight normalize the last layer of the DINO head ; not normalizing leads to better performance but can make the training unstable.
   drop_path_rate: 0.1 # stochastic depth rate
-  use_bn_in_head: False # whether to use batch normalizations in projection head
+  use_bn_in_head: false # whether to use batch normalizations in projection head
 teacher:
   momentum_teacher: 0.996 # base EMA parameter for teacher update. The value is increased to 1 during training with cosine schedule ; we recommend setting a higher value with small batches: for example use 0.9995 with batch size of 256
   warmup_teacher_temp: 0.04 # initial value for the teacher temperature: 0.04 works well in most cases ; try decreasing it if the training loss does not decrease
@@ -59,10 +58,10 @@ crops:
     - 0.05
     - 0.4
 speed:
-  use_fp16: True # whether or not to use half precision for training ; improves training time and memory requirements, but can provoke instability and slight decay of performance ; we recommend disabling mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs
+  use_fp16: true # whether or not to use half precision for training ; improves training time and memory requirements, but can provoke instability and slight decay of performance ; we recommend disabling mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs
   num_workers: 4
 wandb:
-  enable: False
+  enable: false
   project: 'vision'
   username: 'vlfm'
   exp_name: '${experiment_name}'

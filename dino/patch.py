@@ -99,20 +99,16 @@ def main(args):
     if is_main_process() and cfg.tune.tune_every:
 
         # only do it from master rank as tuning is not being run distributed for now
-        train_df = pd.read_csv(cfg.tune.knn.train_csv)
-        test_df = pd.read_csv(cfg.tune.knn.test_csv)
 
         num_workers = min(mp.cpu_count(), cfg.tune.knn.num_workers)
         if "SLURM_JOB_CPUS_PER_NODE" in os.environ:
             num_workers = min(num_workers, int(os.environ["SLURM_JOB_CPUS_PER_NODE"]))
 
         downstream_train_loader, downstream_test_loader = prepare_data(
-            train_df,
-            test_df,
+            cfg,
             cfg.tune.knn.batch_size_per_gpu,
             False,
             num_workers,
-            cfg.tune.knn.label_name,
         )
         print(
             f"Tuning data loaded with {len(downstream_train_loader.dataset)} train patches and {len(downstream_test_loader.dataset)} test patches."

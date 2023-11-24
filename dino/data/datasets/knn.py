@@ -13,7 +13,7 @@ _Labels = int
 
 
 class _Split(Enum):
-    TRAIN = "train"
+    QUERY = "query"
     TEST = "test"
 
     def entries_name(self):
@@ -125,7 +125,8 @@ class KNNDataset(ExtendedVisionDataset):
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            return super().__getitem__(index)
+            image, target = super().__getitem__(index)
+            return index, image, target
 
     def __len__(self) -> int:
         return len(self._entries)

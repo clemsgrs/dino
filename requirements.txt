@@ -7,4 +7,5 @@ matplotlib
 torch
 torchvision
 tqdm
+omegaconf
 opencv-python==4.4.0.46
