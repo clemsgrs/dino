@@ -11,7 +11,7 @@ resume_from_checkpoint:
 seed: 0
 
 model:
-  arch: 'vit4k_xs'
+  arch: 'hvit_xs'
   region_size: 4096
   patch_size: 256
   out_dim: 65536 # dimensionality of the DINO head output. For complex and large datasets large values (like 65k) work well

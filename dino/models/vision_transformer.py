@@ -462,8 +462,8 @@ def vit_base(
     return model
 
 
-class VisionTransformer4K(nn.Module):
-    """Vision Transformer 4K"""
+class HierarchicalVisionTransformer(nn.Module):
+    """Hierarchical Vision Transformer"""
 
     def __init__(
         self,
@@ -628,7 +628,7 @@ class VisionTransformer4K(nn.Module):
         return output
 
 
-def vit4k_xs(
+def hvit_xs(
     img_size: int = 4096,
     patch_size: int = 256,
     input_embed_dim: int = 384,
@@ -636,7 +636,7 @@ def vit4k_xs(
     num_classes: int = 0,
     **kwargs,
 ):
-    model = VisionTransformer4K(
+    model = HierarchicalVisionTransformer(
         num_classes=num_classes,
         input_embed_dim=input_embed_dim,
         output_embed_dim=output_embed_dim,
