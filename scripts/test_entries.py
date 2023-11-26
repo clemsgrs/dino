@@ -30,8 +30,7 @@ def test_tarball_entries(image_root, tarball_path, entries_path, file_indices_pa
     mismatch = 0
     for entry in subset_entries:
         _, img_idx, start_offset, end_offset = entry
-        img_path = file_indices[img_idx]
-        img_name = Path(img_path).name
+        img_name = file_indices[img_idx]
         original_path = Path(image_root, img_name)
         extracted_data = extract_file(tarball_path, start_offset, end_offset)
 

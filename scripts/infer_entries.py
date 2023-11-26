@@ -22,8 +22,9 @@ def infer_entries_from_tarball(
     prefix: Optional[str] = None,
     suffix: Optional[str] = None,
     df: Optional[pd.DataFrame] = None,
-    label_name: str = '"label',
-    class_name: str = '"class',
+    file_name: str = "filename",
+    label_name: str = "label",
+    class_name: str = "class",
 ):
     entries = []
     file_index = 0
@@ -35,7 +36,7 @@ def infer_entries_from_tarball(
     if df is not None:
         if class_name not in df.columns:
             df[class_name] = df[label_name].apply(lambda x: f"class_{x}")
-        df["stem"] = df.filepath.apply(lambda fp: Path(fp).stem)
+        df["stem"] = df[file_name].apply(lambda x: Path(x).stem)
 
     # convert restrict filepaths to a set for efficient lookup, if provided
     restrict_filepaths = set(restrict_filepaths) if restrict_filepaths else None
@@ -46,7 +47,16 @@ def infer_entries_from_tarball(
             if not header_bytes.strip(b"\0"):
                 break  # end of archive
 
-            name, size = parse_tar_header(header_bytes)
+            path, size = parse_tar_header(header_bytes)
+            name = Path(path).name
+
+            if name == "@LongLink":
+                path = f.read(512).decode("utf-8").rstrip("\0")
+                header_bytes = f.read(512)  # read the next header
+                path, size = parse_tar_header(header_bytes)
+                name = Path(path).name
+
+            stem = Path(path).stem
             if size == 0 and file_index == 0:
                 # skip first entry if empty
                 file_index += 1
@@ -55,13 +65,10 @@ def infer_entries_from_tarball(
             # add file name to the dictionary and use the index in entries
             file_indices[file_index] = name
 
-            # get class index
-            if df is not None:
-                class_index = df[df["stem"] == Path(name).stem][label_name].values[0]
-            else:
-                class_index = 0
-
-            if restrict_filepaths is None or name in restrict_filepaths:
+            class_index = 0
+            if restrict_filepaths is None or stem in restrict_filepaths:
+                if df is not None:
+                    class_index = df[df["stem"] == stem][label_name].values[0]
                 start_offset = f.tell()
                 end_offset = start_offset + size
                 entries.append([class_index, file_index, start_offset, end_offset])
@@ -113,10 +120,11 @@ def main():
     )
     parser.add_argument("-p", "--prefix", type=str, help="Prefix to append to the *.npy file names.")
     parser.add_argument(
-        "-r", "--restrict", type=str, help="Path to a .txt file with the filenames for a specific fold."
+        "-r", "--restrict", type=str, help="Path to a .txt/.csv file with the filenames for a specific fold."
     )
     parser.add_argument("-s", "--suffix", type=str, help="Suffix to append to the entries.npy file name.")
     parser.add_argument("-c", "--csv", type=str, help="Path to the csv file with samples labels.")
+    parser.add_argument("-f", "--file_name", type=str, default="filename", help="Name of the column holding the file names.")
     parser.add_argument("-l", "--label_name", type=str, default="label", help="Name of the column holding the labels.")
     parser.add_argument(
         "-n", "--class_name", type=str, default="class", help="Name of the column holding the class names."
@@ -126,15 +134,17 @@ def main():
 
     restrict_filepaths = None
     if args.restrict:
+        print(f"Parsing {args.restrict}...")
         with open(args.restrict, "r") as f:
-            restrict_filepaths = [line.strip() for line in f]
+            restrict_filepaths = [Path(line.strip()).stem for line in f]
+        print(f"Done: {len(restrict_filepaths)} files found")
 
     prefix = f"{args.prefix}" if args.prefix else None
     suffix = f"{args.suffix}" if args.restrict and args.suffix else None
 
     df = pd.read_csv(args.csv) if args.csv else None
     infer_entries_from_tarball(
-        args.tarball_path, args.output_root, restrict_filepaths, prefix, suffix, df, args.label_name, args.class_name
+        args.tarball_path, args.output_root, restrict_filepaths, prefix, suffix, df, args.file_name, args.label_name, args.class_name
     )
 
 
