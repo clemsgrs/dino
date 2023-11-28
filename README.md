@@ -66,6 +66,7 @@ Then kick off distributed pretraining of a vanilla ViT-S/16 :
 python3 -m torch.distributed.run --nproc_per_node={gpu} dino/patch.py
 ```
 
+Alternatively, you can check `notebooks/vanilla_dino.ipynb`.
 
 ### Hierarchical pretraining :t-rex:
 
