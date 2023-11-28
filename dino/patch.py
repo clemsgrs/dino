@@ -25,20 +25,27 @@ from dino.data import PatchDataAugmentationDINO
 from dino.eval import prepare_data
 from dino.models import MultiCropWrapper
 from dino.distributed import get_world_size, is_main_process
-from dino.utils import train_one_epoch, tune_one_epoch, cosine_scheduler, fix_random_seeds, has_batchnorms, get_params_groups, compute_time, resume_from_checkpoint
+from dino.utils import (
+    train_one_epoch,
+    tune_one_epoch,
+    cosine_scheduler,
+    fix_random_seeds,
+    has_batchnorms,
+    get_params_groups,
+    compute_time,
+    resume_from_checkpoint,
+)
 from dino.log import initialize_wandb, update_log_dict
 
 
-@hydra.main(
-    version_base="1.2.0", config_path="config", config_name="patch"
-)
+@hydra.main(version_base="1.2.0", config_path="config", config_name="patch")
 def main(cfg: DictConfig):
     distributed = torch.cuda.device_count() > 1
     if distributed:
         torch.distributed.init_process_group(backend="nccl")
         gpu_id = int(os.environ["LOCAL_RANK"])
         if gpu_id == 0:
-            print(f"Distributed session successfully initialized")
+            print("Distributed session successfully initialized")
     else:
         gpu_id = -1
 
@@ -80,11 +87,10 @@ def main(cfg: DictConfig):
 
     # preparing data
     if is_main_process():
-        print(f"Loading data...")
+        print("Loading data...")
 
     # ============ preparing tuning data ============
     if is_main_process() and cfg.early_stopping.tune_every:
-
         # only do it from master rank as tuning is not being run distributed for now
         train_df = pd.read_csv(cfg.early_stopping.downstream.train_csv)
         test_df = pd.read_csv(cfg.early_stopping.downstream.test_csv)
@@ -144,7 +150,7 @@ def main(cfg: DictConfig):
 
     # building student and teacher networks
     if is_main_process():
-        print(f"Building student and teacher networks...")
+        print("Building student and teacher networks...")
     student = vits.__dict__[cfg.model.arch](
         patch_size=cfg.model.patch_size,
         drop_path_rate=cfg.model.drop_path_rate,
@@ -251,7 +257,7 @@ def main(cfg: DictConfig):
         cfg.model.momentum_teacher, 1, cfg.training.nepochs, len(data_loader)
     )
     if is_main_process():
-        print(f"Models built, kicking off training")
+        print("Models built, kicking off training")
 
     epochs_run = 0
 
@@ -302,7 +308,7 @@ def main(cfg: DictConfig):
 
     with tqdm.tqdm(
         range(epochs_run, cfg.training.nepochs),
-        desc=(f"DINO Pretraining"),
+        desc=("DINO Pretraining"),
         unit=" epoch",
         ncols=100,
         leave=True,
@@ -432,5 +438,4 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
-
     main()

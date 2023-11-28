@@ -22,20 +22,27 @@ from dino.components import DINOLoss
 from dino.data import RegionDataAugmentationDINO, HierarchicalPretrainingDataset
 from dino.models import MultiCropWrapper
 from dino.distributed import get_world_size, is_main_process
-from dino.utils import train_one_epoch, cosine_scheduler, fix_random_seeds, has_batchnorms, get_params_groups, compute_time, start_from_checkpoint, resume_from_checkpoint
+from dino.utils import (
+    train_one_epoch,
+    cosine_scheduler,
+    fix_random_seeds,
+    has_batchnorms,
+    get_params_groups,
+    compute_time,
+    start_from_checkpoint,
+    resume_from_checkpoint,
+)
 from dino.log import initialize_wandb, update_log_dict
 
 
-@hydra.main(
-    version_base="1.2.0", config_path="config", config_name="region"
-)
+@hydra.main(version_base="1.2.0", config_path="config", config_name="region")
 def main(cfg: DictConfig):
     distributed = torch.cuda.device_count() > 1
     if distributed:
         torch.distributed.init_process_group(backend="nccl")
         gpu_id = int(os.environ["LOCAL_RANK"])
         if gpu_id == 0:
-            print(f"Distributed session successfully initialized")
+            print("Distributed session successfully initialized")
     else:
         gpu_id = -1
 
@@ -74,7 +81,7 @@ def main(cfg: DictConfig):
 
     # preparing data
     if is_main_process():
-        print(f"Loading data...")
+        print("Loading data...")
 
     transform = RegionDataAugmentationDINO(
         cfg.aug.global_crops_scale,
@@ -113,7 +120,7 @@ def main(cfg: DictConfig):
 
     # building student and teacher networks
     if is_main_process():
-        print(f"Building student and teacher networks...")
+        print("Building student and teacher networks...")
     student = vits.__dict__[cfg.model.arch](
         img_size=cfg.model.region_size,
         patch_size=cfg.model.patch_size,
@@ -236,7 +243,7 @@ def main(cfg: DictConfig):
         len(data_loader),
     )
     if is_main_process():
-        print(f"Models built, kicking off training")
+        print("Models built, kicking off training")
 
     epochs_run = 0
 
@@ -271,7 +278,7 @@ def main(cfg: DictConfig):
 
     with tqdm.tqdm(
         range(epochs_run, cfg.training.nepochs),
-        desc=(f"Hierarchical DINO Pretraining"),
+        desc=("Hierarchical DINO Pretraining"),
         unit=" epoch",
         ncols=100,
         leave=True,
@@ -329,7 +336,7 @@ def main(cfg: DictConfig):
                     and epoch % cfg.logging.save_snapshot_every == 0
                 ):
                     torch.save(snapshot, save_path)
-                torch.save(snapshot, Path(snapshot_dir, f"latest.pt"))
+                torch.save(snapshot, Path(snapshot_dir, "latest.pt"))
 
                 if cfg.wandb.enable:
                     wandb.log(log_dict, step=epoch)
@@ -358,5 +365,4 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
-
     main()

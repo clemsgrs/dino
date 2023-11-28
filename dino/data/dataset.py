@@ -8,7 +8,6 @@ from typing import Callable, Optional, Any
 from torchvision.datasets.folder import default_loader
 
 
-
 def read_image(image_fp: str) -> Image:
     return Image.open(image_fp)
 
