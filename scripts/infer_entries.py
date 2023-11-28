@@ -18,7 +18,7 @@ def parse_tar_header(header_bytes):
 def infer_entries_from_tarball(
     tarball_path,
     output_root,
-    restrict_filepaths: Optional[List[str]] = None,
+    restrict_filenames: Optional[List[str]] = None,
     prefix: Optional[str] = None,
     suffix: Optional[str] = None,
     df: Optional[pd.DataFrame] = None,
@@ -36,10 +36,9 @@ def infer_entries_from_tarball(
     if df is not None:
         if class_name not in df.columns:
             df[class_name] = df[label_name].apply(lambda x: f"class_{x}")
-        df["stem"] = df[file_name].apply(lambda x: Path(x).stem)
 
     # convert restrict filepaths to a set for efficient lookup, if provided
-    restrict_filepaths = set(restrict_filepaths) if restrict_filepaths else None
+    restrict_filenames = set(restrict_filenames) if restrict_filenames else None
 
     with open(tarball_path, "rb") as f:
         while True:
@@ -48,27 +47,27 @@ def infer_entries_from_tarball(
                 break  # end of archive
 
             path, size = parse_tar_header(header_bytes)
-            name = Path(path).name
+            filename = Path(path).name
 
-            if name == "@LongLink":
+            if filename == "@LongLink":
                 path = f.read(512).decode("utf-8").rstrip("\0")
                 header_bytes = f.read(512)  # read the next header
                 path, size = parse_tar_header(header_bytes)
-                name = Path(path).name
+                filename = Path(path).name
 
-            stem = Path(path).stem
             if size == 0 and file_index == 0:
                 # skip first entry if empty
                 file_index += 1
                 continue
 
             # add file name to the dictionary and use the index in entries
-            file_indices[file_index] = name
+            file_indices[file_index] = filename
 
             class_index = 0
-            if restrict_filepaths is None or stem in restrict_filepaths:
+            # if restrict_filenames is None or stem in restrict_filenames:
+            if restrict_filenames is None or  len(restrict_filenames.intersection(set([filename])))>0:
                 if df is not None:
-                    class_index = df[df["stem"] == stem][label_name].values[0]
+                    class_index = df[df[file_name] == filename][label_name].values[0]
                 start_offset = f.tell()
                 end_offset = start_offset + size
                 entries.append([class_index, file_index, start_offset, end_offset])
@@ -78,6 +77,7 @@ def infer_entries_from_tarball(
             f.seek(size, os.SEEK_CUR)  # skip to the next header
             if size % 512 != 0:
                 f.seek(512 - (size % 512), os.SEEK_CUR)  # adjust for padding
+                progress_bar.update(512 + size + (512 - (size % 512) if size % 512 != 0 else 0))
             progress_bar.update(512 + size + (512 - (size % 512) if size % 512 != 0 else 0))
 
     # save entries
@@ -132,19 +132,19 @@ def main():
 
     args = parser.parse_args()
 
-    restrict_filepaths = None
+    restrict_filenames = None
     if args.restrict:
         print(f"Parsing {args.restrict}...")
         with open(args.restrict, "r") as f:
-            restrict_filepaths = [Path(line.strip()).stem for line in f]
-        print(f"Done: {len(restrict_filepaths)} files found")
+            restrict_filenames = [line.strip() for line in f]
+        print(f"Done: {len(restrict_filenames)} files found")
 
     prefix = f"{args.prefix}" if args.prefix else None
     suffix = f"{args.suffix}" if args.restrict and args.suffix else None
 
     df = pd.read_csv(args.csv) if args.csv else None
     infer_entries_from_tarball(
-        args.tarball_path, args.output_root, restrict_filepaths, prefix, suffix, df, args.file_name, args.label_name, args.class_name
+        args.tarball_path, args.output_root, restrict_filenames, prefix, suffix, df, args.file_name, args.label_name, args.class_name
     )
 
 
