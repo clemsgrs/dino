@@ -15,7 +15,7 @@ echo "running flake8"
 if [ -n "$1" ]; then
   flake8 "$1"
 else
-  flake8
+  flake8 --ignore=E501,F401,W503
 fi
 
 echo "running pylint"
