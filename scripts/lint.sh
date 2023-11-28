@@ -8,7 +8,7 @@ echo "running black"
 if [ -n "$1" ]; then
   black "$1"
 else
-  black dinov2
+  black dino
 fi
 
 echo "running flake8"
@@ -22,7 +22,7 @@ echo "running pylint"
 if [ -n "$1" ]; then
   pylint "$1"
 else
-  pylint dinov2
+  pylint dino
 fi
 
 exit 0
