@@ -76,3 +76,5 @@ Then kick off distributed pretraining of a ViT-S/4096_256 :
 ```bash
 python3 -m torch.distributed.run --nproc_per_node={gpu} dino/region.py
 ```
+
+Alternatively, you can check `notebooks/hierarchical_dino.ipynb`.
