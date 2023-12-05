@@ -144,7 +144,7 @@ def main(args):
         dataset = torch.utils.data.Subset(dataset, idxs)
         if is_main_process():
             print(
-                f"Pretraining on {cfg.train.pct*100}% of the data: {len(dataset):,d} samples:\n"
+                f"Pretraining on {cfg.train.pct*100}% of the data: {len(dataset):,d} samples\n"
             )
 
     if distributed:

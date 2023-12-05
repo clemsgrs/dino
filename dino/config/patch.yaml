@@ -1,7 +1,7 @@
 train:
-  dataset_path: Pathology:root=/root/data
+  dataset_path: Pathology:root=/root/data:fold=0
   batch_size_per_gpu: 8
-  pct:
+  pct: .05
   output_dir: 'output'
   experiment_name: 'patch'
   save_every: 5 # save checkpoint every x epochs
@@ -19,8 +19,8 @@ tune:
   knn:
     nb_knn: 20
     temperature: 0.07
-    query_dataset_path: KNN:root=/root/data:split=QUERY
-    test_dataset_path: KNN:root=/root/data:split=TEST
+    query_dataset_path: KNN:root=/root/data:split=QUERY:fold=0
+    test_dataset_path: KNN:root=/root/data:split=TEST:fold=0
     batch_size_per_gpu: 256
     num_workers: 8
     save_features: false
@@ -64,8 +64,8 @@ wandb:
   enable: false
   project: 'vision'
   username: 'vlfm'
-  exp_name: '${experiment_name}'
-  tags: ['dino', 'patch', '${model.arch}']
+  exp_name: '${train.experiment_name}'
+  tags: ['dino', 'patch', '${student.arch}']
   dir: '/home/user'
   group:
   to_log: ['loss']
