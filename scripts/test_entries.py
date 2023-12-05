@@ -34,6 +34,7 @@ def test_tarball_entries(
         _, img_idx, start_offset, end_offset = entry
         img_name = file_indices[img_idx]
         original_path = Path(image_root, img_name)
+        assert original_path.is_file()
         extracted_data = extract_file(tarball_path, start_offset, end_offset)
 
         if not compare_files(original_path, extracted_data):

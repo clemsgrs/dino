@@ -33,7 +33,7 @@ You need to wrap up your data in a tarball file:
 2. create a single large tarball file that contains all images
 
     ```shell
-    tar -cf pretrain_dataset.tar /path/to/image/folder
+    tar -chf pretrain_dataset.tar /path/to/image/folder
     ```
 
 3. infer the auxiliary files `pretrain_entries.npy` and `pretrain_file_indices.npy`
