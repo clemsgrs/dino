@@ -1,4 +1,5 @@
 import os
+import gzip
 import tqdm
 import argparse
 import numpy as np
@@ -6,6 +7,14 @@ import pandas as pd
 
 from pathlib import Path
 from typing import Optional, List
+
+
+def get_open_callable_from_tarball(tarball_path):
+    suffix = "".join(Path(tarball_path).suffixes)
+    if suffix == ".tar":
+        return open
+    elif suffix == ".tar.gz":
+        return gzip.open
 
 
 def parse_tar_header(header_bytes):
@@ -40,7 +49,8 @@ def infer_entries_from_tarball(
     # convert restrict filepaths to a set for efficient lookup, if provided
     restrict_filenames = set(restrict_filenames) if restrict_filenames else None
 
-    with open(tarball_path, "rb") as f:
+    open_callable = get_open_callable_from_tarball(tarball_path)
+    with open_callable(tarball_path, "rb") as f:
         while True:
             header_bytes = f.read(512)  # read header
             if not header_bytes.strip(b"\0"):
@@ -58,6 +68,7 @@ def infer_entries_from_tarball(
             if size == 0 and file_index == 0:
                 # skip first entry if empty
                 file_index += 1
+                progress_bar.update(512)
                 continue
 
             # add file name to the dictionary and use the index in entries
@@ -65,7 +76,10 @@ def infer_entries_from_tarball(
 
             class_index = 0
             # if restrict_filenames is None or stem in restrict_filenames:
-            if restrict_filenames is None or  len(restrict_filenames.intersection(set([filename])))>0:
+            if (
+                restrict_filenames is None
+                or len(restrict_filenames.intersection(set([filename]))) > 0
+            ):
                 if df is not None:
                     class_index = df[df[file_name] == filename][label_name].values[0]
                 start_offset = f.tell()
@@ -77,8 +91,9 @@ def infer_entries_from_tarball(
             f.seek(size, os.SEEK_CUR)  # skip to the next header
             if size % 512 != 0:
                 f.seek(512 - (size % 512), os.SEEK_CUR)  # adjust for padding
-                progress_bar.update(512 + size + (512 - (size % 512) if size % 512 != 0 else 0))
-            progress_bar.update(512 + size + (512 - (size % 512) if size % 512 != 0 else 0))
+            progress_bar.update(
+                512 + size + (512 - (size % 512) if size % 512 != 0 else 512 + size)
+            )
 
     # save entries
     if prefix:
@@ -94,7 +109,9 @@ def infer_entries_from_tarball(
 
     # optionally save file indices
     file_indices_filepath = (
-        Path(output_root, f"{prefix}_file_indices.npy") if prefix else Path(output_root, "file_indices.npy")
+        Path(output_root, f"{prefix}_file_indices.npy")
+        if prefix
+        else Path(output_root, "file_indices.npy")
     )
     if not file_indices_filepath.exists():
         np.save(file_indices_filepath, file_indices)
@@ -109,8 +126,16 @@ def infer_entries_from_tarball(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate entries file for pretraining dataset.")
-    parser.add_argument("-t", "--tarball_path", type=str, required=True, help="Path to the tarball file.")
+    parser = argparse.ArgumentParser(
+        description="Generate entries file for pretraining dataset."
+    )
+    parser.add_argument(
+        "-t",
+        "--tarball_path",
+        type=str,
+        required=True,
+        help="Path to the tarball file.",
+    )
     parser.add_argument(
         "-o",
         "--output_root",
@@ -118,16 +143,44 @@ def main():
         required=True,
         help="Path to the output directory where dataset.tar and entries.npy will be saved.",
     )
-    parser.add_argument("-p", "--prefix", type=str, help="Prefix to append to the *.npy file names.")
     parser.add_argument(
-        "-r", "--restrict", type=str, help="Path to a .txt/.csv file with the filenames for a specific fold."
+        "-p", "--prefix", type=str, help="Prefix to append to the *.npy file names."
     )
-    parser.add_argument("-s", "--suffix", type=str, help="Suffix to append to the entries.npy file name.")
-    parser.add_argument("-c", "--csv", type=str, help="Path to the csv file with samples labels.")
-    parser.add_argument("-f", "--file_name", type=str, default="filename", help="Name of the column holding the file names.")
-    parser.add_argument("-l", "--label_name", type=str, default="label", help="Name of the column holding the labels.")
     parser.add_argument(
-        "-n", "--class_name", type=str, default="class", help="Name of the column holding the class names."
+        "-r",
+        "--restrict",
+        type=str,
+        help="Path to a .txt/.csv file with the filenames for a specific fold.",
+    )
+    parser.add_argument(
+        "-s",
+        "--suffix",
+        type=str,
+        help="Suffix to append to the entries.npy file name.",
+    )
+    parser.add_argument(
+        "-c", "--csv", type=str, help="Path to the csv file with samples labels."
+    )
+    parser.add_argument(
+        "-f",
+        "--file_name",
+        type=str,
+        default="filename",
+        help="Name of the column holding the file names.",
+    )
+    parser.add_argument(
+        "-l",
+        "--label_name",
+        type=str,
+        default="label",
+        help="Name of the column holding the labels.",
+    )
+    parser.add_argument(
+        "-n",
+        "--class_name",
+        type=str,
+        default="class",
+        help="Name of the column holding the class names.",
     )
 
     args = parser.parse_args()
@@ -137,14 +190,22 @@ def main():
         print(f"Parsing {args.restrict}...")
         with open(args.restrict, "r") as f:
             restrict_filenames = [line.strip() for line in f]
-        print(f"Done: {len(restrict_filenames)} files found")
+        print(f"Done: {len(set(restrict_filenames))} unique files found")
 
     prefix = f"{args.prefix}" if args.prefix else None
     suffix = f"{args.suffix}" if args.restrict and args.suffix else None
 
     df = pd.read_csv(args.csv) if args.csv else None
     infer_entries_from_tarball(
-        args.tarball_path, args.output_root, restrict_filenames, prefix, suffix, df, args.file_name, args.label_name, args.class_name
+        args.tarball_path,
+        args.output_root,
+        restrict_filenames,
+        prefix,
+        suffix,
+        df,
+        args.file_name,
+        args.label_name,
+        args.class_name,
     )
 
 

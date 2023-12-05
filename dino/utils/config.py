@@ -19,7 +19,9 @@ def get_cfg_from_args(args):
     elif args.level == "region":
         default_cfg = OmegaConf.create(region_default_config)
     else:
-        raise KeyError(f"Level should be in ['patch', 'region'] (provided level: {args.level})")
+        raise KeyError(
+            f"Level should be in ['patch', 'region'] (provided level: {args.level})"
+        )
     cfg = OmegaConf.load(args.config_file)
     cfg = OmegaConf.merge(default_cfg, cfg)
     return cfg

@@ -41,7 +41,9 @@ class PathologyDataset(VisionDataset):
         super().__init__(root, transforms, transform, target_transform)
         self._fold = fold
         self._get_entries()
-        self._filepaths = np.load(Path(root, "pretrain_file_indices.npy"), allow_pickle=True).item()
+        self._filepaths = np.load(
+            Path(root, "pretrain_file_indices.npy"), allow_pickle=True
+        ).item()
         self._mmap_tarball = _make_mmap_tarball(Path(root, "pretrain_dataset.tar"))
 
     @property

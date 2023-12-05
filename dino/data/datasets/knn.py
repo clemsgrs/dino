@@ -12,6 +12,17 @@ from .extended import ExtendedVisionDataset
 _Labels = int
 
 
+class _Fold(Enum):
+    FOLD_0 = "0"
+    FOLD_1 = "1"
+    FOLD_2 = "2"
+    FOLD_3 = "3"
+    FOLD_4 = "4"
+
+    def entries_name(self, split):
+        return f"{split.value}_entries_{self.value}.npy"
+
+
 class _Split(Enum):
     QUERY = "query"
     TEST = "test"
@@ -22,9 +33,6 @@ class _Split(Enum):
     def file_indices_name(self):
         return f"{self.value}_file_indices.npy"
 
-    def tarball_name(self):
-        return f"{self.value}_dataset.tar"
-
 
 def _make_mmap_tarball(tarball_path: str) -> mmap:
     # since we only have one tarball, this function simplifies to mmap that single file
@@ -33,6 +41,7 @@ def _make_mmap_tarball(tarball_path: str) -> mmap:
 
 
 class KNNDataset(ExtendedVisionDataset):
+    Fold = _Fold
     Split = _Split
     Labels = _Labels
 
@@ -40,12 +49,14 @@ class KNNDataset(ExtendedVisionDataset):
         self,
         *,
         root: str,
+        fold: Optional["KNNDataset.Fold"] = None,
         split: Optional["KNNDataset.Split"] = None,
         transforms: Optional[Callable] = None,
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
     ) -> None:
         super().__init__(root, transforms, transform, target_transform)
+        self._fold = fold
         self._split = split
         self._get_entries()
         self._get_filepaths()
@@ -53,12 +64,16 @@ class KNNDataset(ExtendedVisionDataset):
         self._get_class_ids()
 
     @property
+    def fold(self) -> "KNNDataset.Fold":
+        return self._fold
+
+    @property
     def split(self) -> "KNNDataset.Split":
         return self._split
 
     @property
     def _entries_name(self) -> str:
-        return self._split.entries_name()
+        return self._fold.entries_name(self._split)
 
     @property
     def _file_indices_name(self) -> str:
@@ -66,7 +81,7 @@ class KNNDataset(ExtendedVisionDataset):
 
     @property
     def _tarball_name(self) -> str:
-        return self._split.tarball_name()
+        return "downstream_dataset.tar"
 
     @property
     def _class_ids_name(self) -> str:

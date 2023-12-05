@@ -1,3 +1,4 @@
+import wandb
 import subprocess
 
 from pathlib import Path
@@ -44,13 +45,13 @@ def initialize_wandb(
 ):
     command = f"wandb login {key}"
     subprocess.call(command, shell=True)
-    if cfg.wandb.tags == None:
+    if cfg.wandb.tags is None:
         tags = []
     else:
         tags = [str(t) for t in cfg.wandb.tags]
     config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     if cfg.wandb.resume_id:
-        run = tracker.init(
+        run = wandb.init(
             project=cfg.wandb.project,
             entity=cfg.wandb.username,
             name=cfg.wandb.exp_name,
@@ -62,7 +63,7 @@ def initialize_wandb(
             resume="must",
         )
     else:
-        run = tracker.init(
+        run = wandb.init(
             project=cfg.wandb.project,
             entity=cfg.wandb.username,
             name=cfg.wandb.exp_name,
@@ -75,7 +76,7 @@ def initialize_wandb(
     d = OmegaConf.to_container(cfg, resolve=True)
     with open(config_file_path, "w+") as f:
         write_dictconfig(d, f)
-        tracker.save(str(config_file_path))
+        wandb.save(str(config_file_path))
         f.close()
     return run
 
@@ -91,5 +92,5 @@ def update_log_dict(
         to_log = list(results.keys())
     for r, v in results.items():
         if r in to_log:
-            tracker.define_metric(f"{prefix}/{r}", step_metric=step)
+            wandb.define_metric(f"{prefix}/{r}", step_metric=step)
             log_dict.update({f"{prefix}/{r}": v})

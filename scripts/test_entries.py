@@ -17,7 +17,9 @@ def compare_files(original_path, extracted_data):
     return original_data == extracted_data
 
 
-def test_tarball_entries(image_root, tarball_path, entries_path, file_indices_path, subset_size):
+def test_tarball_entries(
+    image_root, tarball_path, entries_path, file_indices_path, subset_size
+):
     entries = np.load(entries_path)
     file_indices = np.load(file_indices_path, allow_pickle=True).item()
 
@@ -50,16 +52,50 @@ def main():
     parser = argparse.ArgumentParser(
         description="Test if tarball and entries files were created correctly for pretraining dataset."
     )
-    parser.add_argument("-i", "--image_root", type=str, required=True, help="Path to the directory containing images.")
-    parser.add_argument("-t", "--tarball_path", type=str, required=True, help="Path to the tarball file.")
-    parser.add_argument("-e", "--entries_path", type=str, required=True, help="Path to the entries file.")
-    parser.add_argument("-f", "--file_indices_path", type=str, required=True, help="Path to the file_indices file.")
-    parser.add_argument("-s", "--subset_size", type=int, default=1000, help="Number of images to test randomly.")
+    parser.add_argument(
+        "-i",
+        "--image_root",
+        type=str,
+        required=True,
+        help="Path to the directory containing images.",
+    )
+    parser.add_argument(
+        "-t",
+        "--tarball_path",
+        type=str,
+        required=True,
+        help="Path to the tarball file.",
+    )
+    parser.add_argument(
+        "-e",
+        "--entries_path",
+        type=str,
+        required=True,
+        help="Path to the entries file.",
+    )
+    parser.add_argument(
+        "-f",
+        "--file_indices_path",
+        type=str,
+        required=True,
+        help="Path to the file_indices file.",
+    )
+    parser.add_argument(
+        "-s",
+        "--sample_size",
+        type=int,
+        default=1000,
+        help="Number of images to test randomly.",
+    )
 
     args = parser.parse_args()
 
     test_tarball_entries(
-        args.image_root, args.tarball_path, args.entries_path, args.file_indices_path, args.subset_size
+        args.image_root,
+        args.tarball_path,
+        args.entries_path,
+        args.file_indices_path,
+        args.sample_size,
     )
 
 

@@ -39,11 +39,13 @@ def prepare_data(
     query_dataset = make_dataset(
         dataset_str=cfg.tune.knn.query_dataset_path,
         transform=data_transform,
+        verbose=is_main_process(),
     )
 
     test_dataset = make_dataset(
         dataset_str=cfg.tune.knn.test_dataset_path,
         transform=data_transform,
+        verbose=is_main_process(),
     )
 
     if distributed:
@@ -137,7 +139,7 @@ def extract_feature_pipeline(
     model = vits.__dict__[arch](patch_size=patch_size, num_classes=0)
     print(f"Model {arch} {patch_size}x{patch_size} built.")
     model.cuda()
-    print(f"Loading pretrained weights...")
+    print("Loading pretrained weights...")
     load_pretrained_weights(model, pretrained_weights, checkpoint_key)
     model.eval()
 
@@ -180,7 +182,7 @@ def extract_multiple_features(
 
     with tqdm.tqdm(
         loader,
-        desc=(f"Feature extraction"),
+        desc=("Feature extraction"),
         unit=" slide",
         ncols=80,
         unit_scale=loader.batch_size,
@@ -293,7 +295,7 @@ def extract_features(model, loader, distributed, use_cuda=True, multiscale=False
 
     with tqdm.tqdm(
         loader,
-        desc=(f"Feature extraction"),
+        desc=("Feature extraction"),
         unit=" slide",
         ncols=80,
         unit_scale=loader.batch_size,
@@ -416,7 +418,7 @@ def main(cfg):
         torch.distributed.init_process_group(backend="nccl")
         gpu_id = int(os.environ["LOCAL_RANK"])
         if gpu_id == 0:
-            print(f"Distributed session successfully initialized")
+            print("Distributed session successfully initialized")
     else:
         gpu_id = -1
     if is_main_process():
@@ -479,5 +481,4 @@ def main(cfg):
 
 
 if __name__ == "__main__":
-
     main()

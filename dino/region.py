@@ -21,20 +21,30 @@ from dino.components import DINOLoss
 from dino.data import RegionDataAugmentationDINO, HierarchicalPretrainingDataset
 from dino.models import MultiCropWrapper
 from dino.distributed import get_world_size, is_main_process
-from dino.utils import train_one_epoch, cosine_scheduler, fix_random_seeds, has_batchnorms, get_params_groups, compute_time, start_from_checkpoint, resume_from_checkpoint
+from dino.utils import (
+    train_one_epoch,
+    cosine_scheduler,
+    fix_random_seeds,
+    has_batchnorms,
+    get_params_groups,
+    compute_time,
+    start_from_checkpoint,
+    resume_from_checkpoint,
+)
 from dino.utils.config import get_cfg_from_args, write_config
 from dino.log import initialize_wandb, update_log_dict
 
 
 def get_args_parser(add_help: bool = True):
     parser = argparse.ArgumentParser("DINO training", add_help=add_help)
-    parser.add_argument("--config-file", default="", metavar="FILE", help="path to config file")
+    parser.add_argument(
+        "--config-file", default="", metavar="FILE", help="path to config file"
+    )
     parser.add_argument("--level", default="region", type=str)
     return parser
 
 
 def main(args):
-
     cfg = get_cfg_from_args(args)
 
     distributed = torch.cuda.device_count() > 1
@@ -42,7 +52,7 @@ def main(args):
         torch.distributed.init_process_group(backend="nccl")
         gpu_id = int(os.environ["LOCAL_RANK"])
         if gpu_id == 0:
-            print(f"Distributed session successfully initialized")
+            print("Distributed session successfully initialized")
     else:
         gpu_id = -1
 
@@ -70,7 +80,8 @@ def main(args):
         output_dir.mkdir(exist_ok=True, parents=True)
     cfg.train.output_dir = str(output_dir)
 
-    write_config(cfg, cfg.train.output_dir)
+    if is_main_process():
+        write_config(cfg, cfg.train.output_dir)
 
     fix_random_seeds(cfg.seed)
     cudnn.benchmark = True
@@ -88,7 +99,7 @@ def main(args):
 
     # preparing data
     if is_main_process():
-        print(f"Loading data...")
+        print("Loading data...")
 
     transform = RegionDataAugmentationDINO(
         cfg.aug.global_crops_scale,
@@ -127,7 +138,7 @@ def main(args):
 
     # building student and teacher networks
     if is_main_process():
-        print(f"Building student and teacher networks...")
+        print("Building student and teacher networks...")
     student = vits.__dict__[cfg.model.arch](
         img_size=cfg.model.region_size,
         patch_size=cfg.model.patch_size,
@@ -250,7 +261,7 @@ def main(args):
         len(data_loader),
     )
     if is_main_process():
-        print(f"Models built, kicking off training")
+        print("Models built, kicking off training")
 
     epochs_run = 0
 
@@ -285,7 +296,7 @@ def main(args):
 
     with tqdm.tqdm(
         range(epochs_run, cfg.training.nepochs),
-        desc=(f"Hierarchical DINO Pretraining"),
+        desc=("Hierarchical DINO Pretraining"),
         unit=" epoch",
         ncols=100,
         leave=True,
@@ -343,7 +354,7 @@ def main(args):
                     and epoch % cfg.logging.save_snapshot_every == 0
                 ):
                     torch.save(snapshot, save_path)
-                torch.save(snapshot, Path(snapshot_dir, f"latest.pt"))
+                torch.save(snapshot, Path(snapshot_dir, "latest.pt"))
 
                 if cfg.wandb.enable:
                     wandb.log(log_dict, step=epoch)
@@ -372,6 +383,5 @@ def main(args):
 
 
 if __name__ == "__main__":
-
     args = get_args_parser(add_help=True).parse_args()
     main(args)

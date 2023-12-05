@@ -23,20 +23,30 @@ from dino.data import PatchDataAugmentationDINO, make_dataset
 from dino.eval import prepare_data
 from dino.models import MultiCropWrapper
 from dino.distributed import get_world_size, is_main_process
-from dino.utils import train_one_epoch, tune_one_epoch, cosine_scheduler, fix_random_seeds, has_batchnorms, get_params_groups, compute_time, resume_from_checkpoint
+from dino.utils import (
+    train_one_epoch,
+    tune_one_epoch,
+    cosine_scheduler,
+    fix_random_seeds,
+    has_batchnorms,
+    get_params_groups,
+    compute_time,
+    resume_from_checkpoint,
+)
 from dino.utils.config import get_cfg_from_args, write_config
 from dino.log import initialize_wandb, update_log_dict
 
 
 def get_args_parser(add_help: bool = True):
     parser = argparse.ArgumentParser("DINO training", add_help=add_help)
-    parser.add_argument("--config-file", default="", metavar="FILE", help="path to config file")
+    parser.add_argument(
+        "--config-file", default="", metavar="FILE", help="path to config file"
+    )
     parser.add_argument("--level", default="patch", type=str)
     return parser
 
 
 def main(args):
-
     cfg = get_cfg_from_args(args)
 
     distributed = torch.cuda.device_count() > 1
@@ -44,7 +54,7 @@ def main(args):
         torch.distributed.init_process_group(backend="nccl")
         gpu_id = int(os.environ["LOCAL_RANK"])
         if gpu_id == 0:
-            print(f"Distributed session successfully initialized")
+            print("Distributed session successfully initialized")
     else:
         gpu_id = -1
 
@@ -72,7 +82,8 @@ def main(args):
         output_dir.mkdir(exist_ok=True, parents=True)
     cfg.train.output_dir = str(output_dir)
 
-    write_config(cfg, cfg.train.output_dir)
+    if is_main_process():
+        write_config(cfg, cfg.train.output_dir)
 
     fix_random_seeds(cfg.train.seed)
     cudnn.benchmark = True
@@ -93,11 +104,10 @@ def main(args):
 
     # preparing data
     if is_main_process():
-        print(f"Loading data...")
+        print("Loading data...\n")
 
     # ============ preparing tuning data ============
     if is_main_process() and cfg.tune.tune_every:
-
         # only do it from master rank as tuning is not being run distributed for now
 
         num_workers = min(mp.cpu_count(), cfg.tune.knn.num_workers)
@@ -110,9 +120,9 @@ def main(args):
             False,
             num_workers,
         )
-        print(
-            f"Tuning data loaded with {len(downstream_train_loader.dataset)} train patches and {len(downstream_test_loader.dataset)} test patches."
-        )
+        # print(
+        #     f"Tuning data loaded with {len(downstream_train_loader.dataset)} train patches and {len(downstream_test_loader.dataset)} test patches.\n"
+        # )
 
     data_transform = PatchDataAugmentationDINO(
         cfg.crops.global_crops_scale,
@@ -125,13 +135,17 @@ def main(args):
         dataset_str=cfg.train.dataset_path,
         transform=data_transform,
         target_transform=lambda _: (),
+        verbose=is_main_process(),
     )
 
     if cfg.train.pct:
-        print(f"Pre-training on {cfg.train.pct*100}% of the data")
         nsample = int(cfg.train.pct * len(dataset))
         idxs = random.sample(range(len(dataset)), k=nsample)
         dataset = torch.utils.data.Subset(dataset, idxs)
+        if is_main_process():
+            print(
+                f"Pretraining on {cfg.train.pct*100}% of the data: {len(dataset):,d} samples:\n"
+            )
 
     if distributed:
         sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
@@ -153,7 +167,7 @@ def main(args):
 
     # building student and teacher networks
     if is_main_process():
-        print(f"Building student and teacher networks...")
+        print("Building student and teacher networks...")
     student = vits.__dict__[cfg.student.arch](
         patch_size=cfg.student.patch_size,
         drop_path_rate=cfg.student.drop_path_rate,
@@ -239,9 +253,7 @@ def main(args):
     assert (
         cfg.optim.epochs >= cfg.optim.warmup_epochs
     ), f"nepochs ({cfg.optim.epochs}) must be greater than or equal to warmup_epochs ({cfg.optim.warmup_epochs})"
-    base_lr = (
-        cfg.optim.lr * (cfg.train.batch_size_per_gpu * get_world_size()) / 256.0
-    )
+    base_lr = cfg.optim.lr * (cfg.train.batch_size_per_gpu * get_world_size()) / 256.0
     lr_schedule = cosine_scheduler(
         base_lr,
         cfg.optim.lr_scheduler.min_lr,
@@ -260,7 +272,7 @@ def main(args):
         cfg.teacher.momentum_teacher, 1, cfg.optim.epochs, len(data_loader)
     )
     if is_main_process():
-        print(f"Models built, kicking off training")
+        print("Models built, kicking off training")
 
     epochs_run = 0
 
@@ -311,7 +323,7 @@ def main(args):
 
     with tqdm.tqdm(
         range(epochs_run, cfg.optim.epochs),
-        desc=(f"DINO Pretraining"),
+        desc=("DINO Pretraining"),
         unit=" epoch",
         ncols=100,
         leave=True,
@@ -441,6 +453,5 @@ def main(args):
 
 
 if __name__ == "__main__":
-
     args = get_args_parser(add_help=True).parse_args()
     main(args)

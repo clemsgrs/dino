@@ -23,11 +23,15 @@ def _parse_dataset_str(dataset_str: str):
     elif name == "Pathology":
         class_ = PathologyDataset
         if "fold" in kwargs:
-            kwargs["fold"] = PathologyDataset.Fold[kwargs["fold"]]
+            fold = kwargs["fold"]
+            kwargs["fold"] = PathologyDataset.Fold[f"FOLD_{fold}"]
     elif name == "KNN":
         class_ = KNNDataset
         if "split" in kwargs:
             kwargs["split"] = KNNDataset.Split[kwargs["split"]]
+        if "fold" in kwargs:
+            fold = kwargs["fold"]
+            kwargs["fold"] = KNNDataset.Fold[f"FOLD_{fold}"]
     else:
         raise ValueError(f'Unsupported dataset "{name}"')
 
@@ -39,6 +43,7 @@ def make_dataset(
     dataset_str: str,
     transform: Optional[Callable] = None,
     target_transform: Optional[Callable] = None,
+    verbose: bool = True,
 ):
     """
     Creates a dataset with the specified parameters.
@@ -51,12 +56,14 @@ def make_dataset(
     Returns:
         The created dataset.
     """
-    print(f'using dataset: "{dataset_str}"')
+    if verbose:
+        print(f'Using dataset: "{dataset_str}"')
 
     class_, kwargs = _parse_dataset_str(dataset_str)
     dataset = class_(transform=transform, target_transform=target_transform, **kwargs)
 
-    print(f"# of dataset samples: {len(dataset):,d}")
+    if verbose:
+        print(f"# of dataset samples: {len(dataset):,d}\n")
 
     # Aggregated datasets do not expose (yet) these attributes, so add them.
     if not hasattr(dataset, "transform"):
