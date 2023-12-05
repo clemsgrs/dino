@@ -24,4 +24,5 @@ def get_cfg_from_args(args):
         )
     cfg = OmegaConf.load(args.config_file)
     cfg = OmegaConf.merge(default_cfg, cfg)
+    OmegaConf.resolve(cfg)
     return cfg
