@@ -227,7 +227,7 @@ def main(args):
         dino_loss = dino_loss.cuda()
 
     params_groups = get_params_groups(student)
-    optimizer = torch.optim.AdamW(params_groups)  # to use with ViTs
+    optimizer = torch.optim.AdamW(params_groups)
 
     # for mixed precision training
     fp16_scaler = None

@@ -1,6 +1,6 @@
-data_dir: '/data/pathology/projects/ais-cap/code/git/clemsgrs/hipt/output/panda/feature_extraction/9x9i02us/region'
+data_dir: '/path/to/region_pretraining'
 
-output_dir: 'output/panda'
+output_dir: 'output'
 experiment_name: 'region'
 
 fold: 0
@@ -56,8 +56,8 @@ logging:
 
 wandb:
   enable: False
-  project: 'vision'
-  username: 'vlfm'
+  project: ''
+  username: ''
   exp_name: '${experiment_name}'
   tags: ['dino', 'region', '${model.arch}']
   dir: '/home/user'
