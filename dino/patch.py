@@ -78,17 +78,11 @@ def main(args):
         run_id = obj[0]
 
     output_dir = Path(cfg.train.output_dir, run_id)
-    if is_main_process():
-        output_dir.mkdir(exist_ok=True, parents=True)
     cfg.train.output_dir = str(output_dir)
-
-    if is_main_process():
-        write_config(cfg, cfg.train.output_dir)
 
     fix_random_seeds(cfg.train.seed)
     cudnn.benchmark = True
 
-    output_dir = Path(cfg.train.output_dir, cfg.train.experiment_name, run_id)
     snapshot_dir = Path(output_dir, "snapshots")
     features_dir = Path(output_dir, "features")
     if not cfg.train.resume and is_main_process():
@@ -102,6 +96,9 @@ def main(args):
         if cfg.tune.tune_every and cfg.tune.knn.save_features:
             features_dir.mkdir(exist_ok=True, parents=True)
 
+    if is_main_process():
+        write_config(cfg, cfg.train.output_dir)
+
     # preparing data
     if is_main_process():
         print("Loading data...\n")
@@ -114,14 +111,14 @@ def main(args):
         if "SLURM_JOB_CPUS_PER_NODE" in os.environ:
             num_workers = min(num_workers, int(os.environ["SLURM_JOB_CPUS_PER_NODE"]))
 
-        downstream_train_loader, downstream_test_loader = prepare_data(
+        downstream_query_loader, downstream_test_loader = prepare_data(
             cfg,
             cfg.tune.knn.batch_size_per_gpu,
             False,
             num_workers,
         )
         # print(
-        #     f"Tuning data loaded with {len(downstream_train_loader.dataset)} train patches and {len(downstream_test_loader.dataset)} test patches.\n"
+        #     f"Tuning data loaded with {len(downstream_query_loader.dataset)} query patches and {len(downstream_test_loader.dataset)} test patches.\n"
         # )
 
     data_transform = PatchDataAugmentationDINO(
@@ -382,10 +379,10 @@ def main(args):
                 and is_main_process()
             ):
                 tune_results = tune_one_epoch(
-                    epoch + 1,
+                    epoch,
                     student,
                     teacher_without_ddp,
-                    downstream_train_loader,
+                    downstream_query_loader,
                     downstream_test_loader,
                     features_dir,
                     cfg.student.arch,

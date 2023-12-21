@@ -1,9 +1,8 @@
 train:
   dataset_path: Pathology:root=/root/data:fold=0
-  batch_size_per_gpu: 8
-  pct: .05
+  batch_size_per_gpu: 128
+  pct:
   output_dir: 'output'
-  experiment_name: 'patch'
   save_every: 5 # save checkpoint every x epochs
   seed: 0
   resume: false
@@ -22,7 +21,7 @@ tune:
     query_dataset_path: KNN:root=/root/data:split=QUERY:fold=0
     test_dataset_path: KNN:root=/root/data:split=TEST:fold=0
     batch_size_per_gpu: 256
-    num_workers: 8
+    num_workers: 16
     save_features: false
     use_cuda: true
 student:
@@ -38,7 +37,7 @@ teacher:
   teacher_temp: 0.04 # final value (after linear warmup) of the teacher temperature ; for most experiments, anything above 0.07 is unstable ; we recommend starting with the default value of 0.04 and increase this slightly if needed
   warmup_teacher_temp_epochs: 0 # number of warmup epochs for the teacher temperature
 optim:
-  epochs: 100
+  epochs: 50
   lr: 0.0005
   weight_decay: 1e-5
   warmup_epochs: 3  # number of epochs for the linear learning-rate warm up.
@@ -59,13 +58,13 @@ crops:
     - 0.4
 speed:
   use_fp16: true # whether or not to use half precision for training ; improves training time and memory requirements, but can provoke instability and slight decay of performance ; we recommend disabling mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs
-  num_workers: 4
+  num_workers: 16
 wandb:
-  enable: false
+  enable: true
   project: 'vision'
   username: 'vlfm'
-  exp_name: '${train.experiment_name}'
-  tags: ['dino', 'patch', '${student.arch}']
+  exp_name: 'dino'
+  tags: ['${wandb.exp_name}', 'patch', '${student.arch}']
   dir: '/home/user'
   group:
   to_log: ['loss']
