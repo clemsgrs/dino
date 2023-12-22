@@ -11,7 +11,6 @@ import datetime
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
-import pandas as pd
 import multiprocessing as mp
 
 from pathlib import Path

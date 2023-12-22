@@ -141,10 +141,20 @@ def tune_one_epoch(
     tqdm.tqdm.write(f"Loading epoch {epoch} weights...")
     student_weights = student.state_dict()
     teacher_weights = teacher.state_dict()
-    load_weights(student_model, student_weights)
-    load_weights(teacher_model, teacher_weights)
+    student_msg = load_weights(student_model, student_weights)
+    teacher_msg = load_weights(teacher_model, teacher_weights)
     student_model.eval()
     teacher_model.eval()
+
+    if len(student_msg.missing_keys) > 0:
+        tqdm.tqdm.write(str(student_msg))
+    else:
+        tqdm.tqdm.write("All keys matched successfully")
+
+    if len(teacher_msg.missing_keys) > 0:
+        tqdm.tqdm.write(str(teacher_msg))
+    else:
+        tqdm.tqdm.write("All keys matched successfully")
 
     # ============ extract student features ============
     tqdm.tqdm.write("Extracting features for query set...")

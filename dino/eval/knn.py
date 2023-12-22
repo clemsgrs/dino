@@ -2,7 +2,6 @@ import os
 import sys
 import tqdm
 import numpy as np
-import pandas as pd
 
 import torch
 import torch.nn as nn
@@ -10,10 +9,8 @@ import torch.distributed as dist
 import torch.backends.cudnn as cudnn
 
 from pathlib import Path
-from typing import Callable, Optional, Any
 from sklearn import metrics
 from torchvision import transforms
-from torchvision.datasets.folder import default_loader
 
 import dino.models.vision_transformer as vits
 

@@ -193,7 +193,4 @@ def load_weights(model, state_dict):
     nn.modules.utils.consume_prefix_in_state_dict_if_present(state_dict, "backbone.")
     # state_dict, msg = update_state_dict(model.state_dict(), state_dict)
     msg = model.load_state_dict(state_dict, strict=False)
-    if len(msg.missing_keys) > 0:
-        tqdm.tqdm.write(str(msg))
-    else:
-        tqdm.tqdm.write("All keys matched successfully")
+    return msg
