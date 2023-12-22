@@ -18,7 +18,7 @@ from pathlib import Path
 import dino.models.vision_transformer as vits
 
 from dino.components import DINOLoss
-from dino.data import RegionDataAugmentationDINO, HierarchicalPretrainingDataset
+from dino.data import RegionDataAugmentationDINO, HierarchicalDataset
 from dino.models import MultiCropWrapper
 from dino.distributed import get_world_size, is_main_process
 from dino.utils import (
@@ -83,12 +83,12 @@ def main(args):
     if is_main_process():
         write_config(cfg, cfg.train.output_dir)
 
-    fix_random_seeds(cfg.seed)
+    fix_random_seeds(cfg.train.seed)
     cudnn.benchmark = True
 
-    output_dir = Path(cfg.output_dir, cfg.experiment_name, run_id)
+    output_dir = Path(cfg.train.output_dir, run_id)
     snapshot_dir = Path(output_dir, "snapshots")
-    if not cfg.resume and is_main_process():
+    if not cfg.train.resume and is_main_process():
         if output_dir.exists():
             print(f"WARNING: {output_dir} already exists! Deleting its content...")
             shutil.rmtree(output_dir)
@@ -102,20 +102,24 @@ def main(args):
         print("Loading data...")
 
     transform = RegionDataAugmentationDINO(
-        cfg.aug.global_crops_scale,
-        cfg.aug.local_crops_number,
-        cfg.aug.local_crops_scale,
-        cfg.model.region_size,
-        cfg.model.patch_size,
+        cfg.crops.global_crops_scale,
+        cfg.crops.local_crops_number,
+        cfg.crops.local_crops_scale,
+        cfg.student.region_size,
+        cfg.student.patch_size,
     )
 
     # using custom dataset for our [256 x 384] tensors ("local" features)
-    dataset = HierarchicalPretrainingDataset(cfg.data_dir, transform)
-    if cfg.training.pct:
-        print(f"Pre-training on {cfg.training.pct*100}% of the data")
-        nsample = int(cfg.training.pct * len(dataset))
+    dataset = HierarchicalDataset(cfg.train.dataset_dir, transform)
+    if cfg.train.pct:
+        print(f"Pre-training on {cfg.train.pct*100}% of the data")
+        nsample = int(cfg.train.pct * len(dataset))
         idxs = random.sample(range(len(dataset)), k=nsample)
         dataset = torch.utils.data.Subset(dataset, idxs)
+        if is_main_process():
+            print(
+                f"Pretraining on {cfg.train.pct*100}% of the data: {len(dataset):,d} samples\n"
+            )
 
     if distributed:
         sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
@@ -128,7 +132,7 @@ def main(args):
     data_loader = torch.utils.data.DataLoader(
         dataset,
         sampler=sampler,
-        batch_size=cfg.training.batch_size_per_gpu,
+        batch_size=cfg.train.batch_size_per_gpu,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
@@ -139,13 +143,13 @@ def main(args):
     # building student and teacher networks
     if is_main_process():
         print("Building student and teacher networks...")
-    student = vits.__dict__[cfg.model.arch](
-        img_size=cfg.model.region_size,
-        patch_size=cfg.model.patch_size,
-        drop_path_rate=cfg.model.drop_path_rate,
+    student = vits.__dict__[cfg.student.arch](
+        img_size=cfg.student.region_size,
+        patch_size=cfg.student.patch_size,
+        drop_path_rate=cfg.student.drop_path_rate,
     )
-    teacher = vits.__dict__[cfg.model.arch](
-        img_size=cfg.model.region_size, patch_size=cfg.model.patch_size
+    teacher = vits.__dict__[cfg.student.arch](
+        img_size=cfg.student.region_size, patch_size=cfg.student.patch_size
     )
     embed_dim = student.embed_dim
 
@@ -154,17 +158,17 @@ def main(args):
         student,
         vits.DINOHead(
             embed_dim,
-            cfg.model.out_dim,
-            use_bn=cfg.model.use_bn_in_head,
-            norm_last_layer=cfg.model.norm_last_layer,
+            cfg.student.out_dim,
+            use_bn=cfg.student.use_bn_in_head,
+            norm_last_layer=cfg.student.norm_last_layer,
         ),
     )
     teacher = MultiCropWrapper(
         teacher,
         vits.DINOHead(
             embed_dim,
-            cfg.model.out_dim,
-            use_bn=cfg.model.use_bn_in_head,
+            cfg.student.out_dim,
+            use_bn=cfg.student.use_bn_in_head,
         ),
     )
 
@@ -195,8 +199,8 @@ def main(args):
         )
 
     # optionally start student from existing checkpoint
-    if cfg.start_from_checkpoint:
-        ckpt_path = Path(cfg.start_from_checkpoint)
+    if cfg.train.start_from_checkpoint:
+        ckpt_path = Path(cfg.train.start_from_checkpoint)
         start_from_checkpoint(
             ckpt_path,
             student,
@@ -212,14 +216,14 @@ def main(args):
         p.requires_grad = False
 
     # total number of crops = 2 global crops + local_crops_number
-    crops_number = cfg.aug.local_crops_number + 2
+    crops_number = cfg.crops.local_crops_number + 2
     dino_loss = DINOLoss(
-        cfg.model.out_dim,
+        cfg.student.out_dim,
         crops_number,
-        cfg.model.warmup_teacher_temp,
-        cfg.model.teacher_temp,
-        cfg.model.warmup_teacher_temp_epochs,
-        cfg.training.nepochs,
+        cfg.teacher.warmup_teacher_temp,
+        cfg.teacher.teacher_temp,
+        cfg.teacher.warmup_teacher_temp_epochs,
+        cfg.optim.epochs,
     )
     if distributed:
         dino_loss = dino_loss.to(gpu_id)
@@ -235,29 +239,27 @@ def main(args):
         fp16_scaler = torch.cuda.amp.GradScaler()
 
     assert (
-        cfg.training.nepochs >= cfg.training.warmup_epochs
-    ), f"nepochs ({cfg.training.nepochs}) must be greater than or equal to warmup_epochs ({cfg.training.warmup_epochs})"
-    base_lr = (
-        cfg.optim.lr * (cfg.training.batch_size_per_gpu * get_world_size()) / 256.0
-    )
+        cfg.optim.epochs >= cfg.optim.warmup_epochs
+    ), f"nepochs ({cfg.optim.epochs}) must be greater than or equal to warmup_epochs ({cfg.optim.warmup_epochs})"
+    base_lr = cfg.optim.lr * (cfg.train.batch_size_per_gpu * get_world_size()) / 256.0
     lr_schedule = cosine_scheduler(
         base_lr,
         cfg.optim.lr_scheduler.min_lr,
-        cfg.training.nepochs,
+        cfg.optim.epochs,
         len(data_loader),
-        warmup_epochs=cfg.training.warmup_epochs,
+        warmup_epochs=cfg.optim.warmup_epochs,
     )
     wd_schedule = cosine_scheduler(
         cfg.optim.lr_scheduler.weight_decay,
         cfg.optim.lr_scheduler.weight_decay_end,
-        cfg.training.nepochs,
+        cfg.optim.epochs,
         len(data_loader),
     )
     # momentum parameter is increased to 1. during training with a cosine schedule
     momentum_schedule = cosine_scheduler(
-        cfg.model.momentum_teacher,
+        cfg.teacher.momentum_teacher,
         1,
-        cfg.training.nepochs,
+        cfg.optim.epochs,
         len(data_loader),
     )
     if is_main_process():
@@ -280,8 +282,8 @@ def main(args):
             if fp16_scaler is not None:
                 fp16_scaler.load_state_dict(snapshot["fp16_scaler"])
             print(f"Resuming training from snapshot at Epoch {epochs_run}")
-    elif cfg.resume:
-        ckpt_path = Path(cfg.resume_from_checkpoint)
+    elif cfg.train.resume:
+        ckpt_path = Path(cfg.train.resume_from_checkpoint)
         epochs_run = resume_from_checkpoint(
             ckpt_path,
             student=student,
@@ -295,13 +297,13 @@ def main(args):
     start_time = time.time()
 
     with tqdm.tqdm(
-        range(epochs_run, cfg.training.nepochs),
+        range(epochs_run, cfg.optim.epochs),
         desc=("Hierarchical DINO Pretraining"),
         unit=" epoch",
         ncols=100,
         leave=True,
         initial=epochs_run,
-        total=cfg.training.nepochs,
+        total=cfg.optim.epochs,
         file=sys.stdout,
         position=0,
         disable=not is_main_process(),
@@ -326,10 +328,10 @@ def main(args):
                 wd_schedule,
                 momentum_schedule,
                 epoch,
-                cfg.training.nepochs,
+                cfg.optim.epochs,
                 fp16_scaler,
-                cfg.training.clip_grad,
-                cfg.training.freeze_last_layer,
+                cfg.optim.clip_grad,
+                cfg.optim.freeze_last_layer_epochs,
                 gpu_id,
             )
 
@@ -349,10 +351,7 @@ def main(args):
                     snapshot["fp16_scaler"] = fp16_scaler.state_dict()
 
                 save_path = Path(snapshot_dir, f"epoch_{epoch:03}.pt")
-                if (
-                    cfg.logging.save_snapshot_every
-                    and epoch % cfg.logging.save_snapshot_every == 0
-                ):
+                if cfg.train.save_every and epoch % cfg.train.save_every == 0:
                     torch.save(snapshot, save_path)
                 torch.save(snapshot, Path(snapshot_dir, "latest.pt"))
 
@@ -371,7 +370,7 @@ def main(args):
             epoch_mins, epoch_secs = compute_time(epoch_start_time, epoch_end_time)
             if is_main_process():
                 tqdm.tqdm.write(
-                    f"End of epoch {epoch+1}/{cfg.training.nepochs} \t Time Taken:  {epoch_mins}m {epoch_secs}s"
+                    f"End of epoch {epoch+1}/{cfg.optim.epochs} \t Time Taken:  {epoch_mins}m {epoch_secs}s"
                 )
 
     total_time = time.time() - start_time
