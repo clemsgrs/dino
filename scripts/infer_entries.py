@@ -28,7 +28,7 @@ def infer_entries_from_tarball(
     tarball_path,
     output_root,
     restrict_filenames: Optional[List[str]] = None,
-    prefix: Optional[str] = None,
+    name: Optional[str] = None,
     suffix: Optional[str] = None,
     df: Optional[pd.DataFrame] = None,
     file_name: str = "filename",
@@ -96,11 +96,11 @@ def infer_entries_from_tarball(
             )
 
     # save entries
-    if prefix:
+    if name:
         if suffix:
-            entries_filepath = Path(output_root, f"{prefix}_entries_{suffix}.npy")
+            entries_filepath = Path(output_root, f"{name}_entries_{suffix}.npy")
         else:
-            entries_filepath = Path(output_root, f"{prefix}_entries.npy")
+            entries_filepath = Path(output_root, f"{name}_entries.npy")
     elif suffix:
         entries_filepath = Path(output_root, f"entries_{suffix}.npy")
     else:
@@ -109,8 +109,8 @@ def infer_entries_from_tarball(
 
     # optionally save file indices
     file_indices_filepath = (
-        Path(output_root, f"{prefix}_file_indices.npy")
-        if prefix
+        Path(output_root, f"{name}_file_indices.npy")
+        if name
         else Path(output_root, "file_indices.npy")
     )
     if not file_indices_filepath.exists():
@@ -130,53 +130,46 @@ def main():
         description="Generate entries file for pretraining dataset."
     )
     parser.add_argument(
-        "-t",
         "--tarball_path",
         type=str,
         required=True,
         help="Path to the tarball file.",
     )
     parser.add_argument(
-        "-o",
         "--output_root",
         type=str,
         required=True,
         help="Path to the output directory where dataset.tar and entries.npy will be saved.",
     )
     parser.add_argument(
-        "-p", "--prefix", type=str, help="Prefix to append to the *.npy file names."
+        "--name", type=str, help="Name to put in front of the *.npy file names."
     )
     parser.add_argument(
-        "-r",
         "--restrict",
         type=str,
         help="Path to a .txt/.csv file with the filenames for a specific fold.",
     )
     parser.add_argument(
-        "-s",
         "--suffix",
         type=str,
         help="Suffix to append to the entries.npy file name.",
     )
     parser.add_argument(
-        "-c", "--csv", type=str, help="Path to the csv file with samples labels."
+        "--csv", type=str, help="Path to the csv file with samples labels."
     )
     parser.add_argument(
-        "-f",
         "--file_name",
         type=str,
         default="filename",
         help="Name of the column holding the file names.",
     )
     parser.add_argument(
-        "-l",
         "--label_name",
         type=str,
         default="label",
         help="Name of the column holding the labels.",
     )
     parser.add_argument(
-        "-n",
         "--class_name",
         type=str,
         default="class",
@@ -192,7 +185,7 @@ def main():
             restrict_filenames = [line.strip() for line in f]
         print(f"Done: {len(set(restrict_filenames))} unique files found")
 
-    prefix = f"{args.prefix}" if args.prefix else None
+    name = f"{args.name}" if args.name else None
     suffix = f"{args.suffix}" if args.suffix else None
 
     df = pd.read_csv(args.csv) if args.csv else None
@@ -200,7 +193,7 @@ def main():
         args.tarball_path,
         args.output_root,
         restrict_filenames,
-        prefix,
+        name,
         suffix,
         df,
         args.file_name,
