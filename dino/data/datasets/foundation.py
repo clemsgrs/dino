@@ -1,7 +1,5 @@
 from functools import lru_cache
 
-# from gzip import GzipFile
-# from io import BytesIO
 from mmap import ACCESS_READ, mmap
 from typing import Any, Callable, Optional, Tuple
 from torchvision.datasets import VisionDataset

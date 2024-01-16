@@ -3,10 +3,6 @@
 PyTorch implementation and pretrained models for DINO. For details, see **Emerging Properties in Self-Supervised Vision Transformers**.
 [[`arXiv`](https://arxiv.org/abs/2104.14294)]
 
-<div align="left">
-  <img width="70%" alt="DINO illustration" src=".github/dino.gif">
-</div>
-
 ## Installation
 
 This codebase has been developed with :

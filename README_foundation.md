@@ -3,10 +3,6 @@
 PyTorch implementation and pretrained models for DINO. For details, see **Emerging Properties in Self-Supervised Vision Transformers**.
 [[`arXiv`](https://arxiv.org/abs/2104.14294)]
 
-<div align="left">
-  <img width="70%" alt="DINO illustration" src=".github/dino.gif">
-</div>
-
 ## Installation
 
 This codebase has been developed with :
@@ -23,7 +19,7 @@ Make sure to install the requirements: `pip3 install -r requirements.txt`
 export PYTHONPATH="${PYTHONPATH}:/path/to/your/dino"
 ```
 
-## Data preparation
+## Pretraining data preparation
 
 You need to have one `.tar` file for each cohort you intend to train on.<br>
 Let's assume each is named `{cohort_name}.tar`.
@@ -36,16 +32,12 @@ Then, for each cohort:
     python3 scripts/infer_entries.py \
         --tarball_path /path/to/{cohort_name}.tar \
         --output_root /path/to/output/folder \
+        --restrict /path/to/filenames.txt \
         --name {cohort_name}
     ```
 
-    The `{cohort_name}_entries.npy` file will record:
-    - a dummy class index (we set it to 0 for all images since we’re not using classes)
-    - a unique filename index for each image
-    - the start and end offsets of each image within the tarball file
-
-    The `{cohort_name}_file_indices.npy` file consists in a dictionnary mapping filename index to corresponding filename.
-
+    Using the `--restrict` flag is optional.<br>
+    It allows you to restrict the `npy` files to the images whose filename is in the provided `/path/to/filenames.txt`.
 
 2. Dump `{cohort_name}.tar`, `{cohort_name}_entries.npy` and `{cohort_name}_file_indices.npy` in a common folder (e.g. `/root/data`)
 
@@ -67,6 +59,47 @@ Once you have completed the previous steps for each cohort :
     ```
 
     (replace `/root/data` with the folder you chose at step 2)
+
+
+## (optional) Downstream data preparation
+
+*This section describes the steps to follow in case you want to run tuning on a downstream task dataset with patch-level labels.*
+
+1. Create a `.csv` file containing downstream patches' filenames and labels:
+
+    ```
+    filename,label
+    downstream_patch_1.jpg,3
+    downstream_patch_2.jpg,1
+    ...
+    ```
+
+2. Create a single tarball file that contains all downstream tuning patches and name it `downstream_dataset.tar`
+3. Infer the auxiliary files `query_entries.npy` and `query_file_indices.npy` :
+
+    ```shell
+    python3 scripts/infer_entries.py \
+      --tarball_path /path/to/downstream_dataset.tar \
+      --output_root /path/to/output/folder \
+      --csv /path/to/csv/file.csv \
+      --restrict /path/to/output/query.txt \
+      --prefix query
+    ```
+
+    `/path/to/output/query.txt` should contain the list of filnames for the patches in the query subset of the downstream dataset.
+
+4. Infer the auxiliary file `test_entries.npy` and `test_file_indices.npy`:
+
+    ```shell
+    python3 scripts/infer_entries.py \
+      --tarball_path /path/to/downstream_dataset.tar \
+      --output_root /path/to/output/folder \
+      --csv /path/to/csv/file.csv \
+      --restrict /path/to/output/test.txt \
+      --prefix test
+    ```
+
+    `/path/to/output/test.txt` should contain the list of filnames for the patches in the test subset of the downstream dataset.
 
 ## Training
 

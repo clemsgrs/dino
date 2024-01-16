@@ -1,5 +1,4 @@
 import sys
-import tqdm
 import torch
 import torch.nn as nn
 import numpy as np
