@@ -1,6 +1,7 @@
 # Self-Supervised Vision Transformers with DINO
 
-PyTorch implementation and pretrained models for DINO. For details, see **Emerging Properties in Self-Supervised Vision Transformers**.
+PyTorch implementation and pretrained models for DINO.<br>
+For details, see **Emerging Properties in Self-Supervised Vision Transformers**.
 [[`arXiv`](https://arxiv.org/abs/2104.14294)]
 
 <div align="left">

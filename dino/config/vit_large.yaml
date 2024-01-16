@@ -1,0 +1,14 @@
+train:
+  dataset_path: Pathology:root=/root/data
+  batch_size_per_gpu: 16
+  output_dir: 'output'
+tune:
+  tune_every: 1 # leave blank if you don't want to use early stopping mechanism
+  knn:
+    query_dataset_path: KNN:root=/root/data:split=query
+    test_dataset_path: KNN:root=/root/data:split=test
+    batch_size_per_gpu: 128
+student:
+  arch: vit_large
+wandb:
+  enable: true
