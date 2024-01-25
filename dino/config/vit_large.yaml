@@ -12,3 +12,6 @@ student:
   arch: vit_large
 wandb:
   enable: true
+  project: 'dino'
+  username: 'vlfm'
+  exp_name: '${student.arch}'
