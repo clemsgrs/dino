@@ -40,7 +40,7 @@ You need to wrap up your data in a tarball file:
       --tarball_path /path/to/pretrain_dataset.tar \
       --output_root /path/to/output/folder \
       --prefix pretrain \
-      --restrict /path/to/filenames_${fold}.txt \
+      --remove /path/to/filenames_${fold}.txt \
       --suffix ${fold}
     ```
 
@@ -49,7 +49,8 @@ You need to wrap up your data in a tarball file:
     - a unique filename index for each image
     - the start and end offsets of each image within the tarball file
 
-    Using the `--restrict` flag in the previous command ensure we only save this information for the images whose filename is in `/path/to/filenames_${fold}.txt`.
+    Using the `--remove` flag in the previous command ensure we only save this information for the images whose filename is **not** in `/path/to/filenames_${fold}.txt`.
+    Alternatively, you can use the `--keep` flag to restrict the information to the images whose filename is in the provided text file.
 
     The `pretrain_file_indices.npy` file consists in a dictionnary mapping filename index to corresponding filename (for all images).
 
@@ -66,7 +67,7 @@ You need to wrap up your data in a tarball file:
       --output_root /path/to/output/folder \
       --csv /path/to/output/query_${fold}.csv \
       --prefix query \
-      --restrict /path/to/output/query_${fold}.txt \
+      --keep /path/to/output/query_${fold}.txt \
       --suffix ${fold}
     ```
 
@@ -78,7 +79,7 @@ You need to wrap up your data in a tarball file:
       --output_root /path/to/output/folder \
       --csv /path/to/output/test_${fold}.csv \
       --prefix test \
-      --restrict /path/to/output/test_${fold}.txt \
+      --keep /path/to/output/test_${fold}.txt \
       --suffix ${fold}
     ```
 

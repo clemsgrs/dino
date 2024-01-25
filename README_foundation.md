@@ -33,12 +33,13 @@ Then, for each cohort:
     python3 scripts/infer_entries.py \
         --tarball_path /path/to/{cohort_name}.tar \
         --output_root /path/to/output/folder \
-        --restrict /path/to/filenames.txt \
+        --remove /path/to/filenames.txt \
         --name {cohort_name}
     ```
 
-    Using the `--restrict` flag is optional.<br>
-    It allows you to restrict the `npy` files to the images whose filename is in the provided `/path/to/filenames.txt`.
+    Using the `--remove` flag is optional.<br>
+    It allows you to remove from the `npy` files the images whose filename is in the provided `/path/to/filenames.txt`.
+    There is also a `--keep` flag you can use to restrict the `npy` files to specific filenames.
 
 2. Dump `{cohort_name}.tar`, `{cohort_name}_entries.npy` and `{cohort_name}_file_indices.npy` in a common folder (e.g. `/root/data`)
 
@@ -83,7 +84,7 @@ Once you have completed the previous steps for each cohort :
       --tarball_path /path/to/downstream_dataset.tar \
       --output_root /path/to/output/folder \
       --csv /path/to/csv/file.csv \
-      --restrict /path/to/output/query.txt \
+      --keep /path/to/output/query.txt \
       --prefix query
     ```
 
@@ -96,7 +97,7 @@ Once you have completed the previous steps for each cohort :
       --tarball_path /path/to/downstream_dataset.tar \
       --output_root /path/to/output/folder \
       --csv /path/to/csv/file.csv \
-      --restrict /path/to/output/test.txt \
+      --keep /path/to/output/test.txt \
       --prefix test
     ```
 
