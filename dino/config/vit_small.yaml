@@ -1,6 +1,6 @@
 train:
   dataset_path: PathologyFoundation:root=/root/data
-  batch_size_per_gpu: 32
+  batch_size_per_gpu: 16
   output_dir: 'output'
 tune:
   tune_every: 1 # leave blank if you don't want to use early stopping mechanism
