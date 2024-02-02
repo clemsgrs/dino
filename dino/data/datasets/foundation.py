@@ -26,14 +26,11 @@ def _get_tarball_path(cohort_name: str) -> str:
 
 def _make_mmap_tarball(tarballs_root: str, mmap_cache_size: int):
     @lru_cache(maxsize=mmap_cache_size)
-    def _mmap_tarball(cohort_name: str, start: int, end: int) -> mmap:
+    def _mmap_tarball(cohort_name: str) -> mmap:
         tarball_path = _get_tarball_path(cohort_name)
         tarball_full_path = Path(tarballs_root, tarball_path)
         with open(tarball_full_path) as f:
-            size = end - start
-            return mmap(
-                fileno=f.fileno(), length=size, offset=start, access=ACCESS_READ
-            )
+            return mmap(fileno=f.fileno(), length=0, access=ACCESS_READ)
 
     return _mmap_tarball
 
@@ -101,12 +98,9 @@ class PathologyFoundationDataset(VisionDataset):
         cohort_name = self._cohort_names[cohort_idx]
         filepaths_dict = self._get_filepaths_dict(cohort_name)
         filepath = filepaths_dict[file_idx]
-        with self._mmap_tarball(cohort_name, start_offset, end_offset) as class_mmap:
-            data = class_mmap[start_offset:end_offset]
-            return data, Path(filepath)
-        # class_mmap = self._mmap_tarball(cohort_name)
-        # data = class_mmap[start_offset:end_offset]
-        # return data, Path(filepath)
+        class_mmap = self._mmap_tarball(cohort_name)
+        data = class_mmap[start_offset:end_offset]
+        return data, Path(filepath)
 
     def get_target(self, index: int) -> Any:
         return int(self._entries[index][0])
