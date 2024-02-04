@@ -65,6 +65,7 @@ def main(args):
             key = os.environ.get("WANDB_API_KEY")
             wandb_run = initialize_wandb(cfg, key=key)
             wandb_run.define_metric("epoch", summary="max")
+            wandb_run.define_metric("epoch_time", summary="mean")
             run_id = wandb_run.id
     else:
         run_id = ""
@@ -418,9 +419,6 @@ def main(args):
                 ):
                     torch.save(snapshot, save_path)
 
-                if cfg.wandb.enable:
-                    wandb.log(log_dict, step=epoch)
-
             log_stats = {
                 **{f"train_{k}": v for k, v in train_stats.items()},
                 "epoch": epoch,
@@ -435,6 +433,11 @@ def main(args):
                 tqdm.tqdm.write(
                     f"End of epoch {epoch+1}/{cfg.optim.epochs} \t Time Taken:  {epoch_mins}m {epoch_secs}s"
                 )
+                if cfg.wandb.enable:
+                    update_log_dict(
+                        None, {"epoch_time": epoch_mins}, log_dict, step="epoch"
+                    )
+                    wandb.log(log_dict, step=epoch)
 
             # ensure other gpus wait until gpu_0 is finished with tuning before starting next training iteration
             if distributed:
