@@ -40,7 +40,18 @@ def get_args_parser(add_help: bool = True):
     parser.add_argument(
         "--config-file", default="", metavar="FILE", help="path to config file"
     )
-    parser.add_argument("--level", default="region", type=str)
+    parser.add_argument("--level", type=str, default="region")
+    parser.add_argument(
+        "opts",
+        help="""
+Modify config options at the end of the command. For Yacs configs, use
+space-separated "PATH.KEY VALUE" pairs.
+For python-based LazyConfig, use "path.key=value".
+        """.strip(),
+        default=None,
+        nargs=argparse.REMAINDER,
+    )
+
     return parser
 
 
