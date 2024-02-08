@@ -10,7 +10,6 @@ def infer_entries(
     output_dir,
     keep: Optional[str] = None,
     remove: Optional[str] = None,
-    name: Optional[str] = None,
     suffix: Optional[str] = None,
     csv: Optional[str] = None,
     file_name: Optional[str] = None,
@@ -29,7 +28,7 @@ def infer_entries(
             "--output_root",
             f"{output_dir}",
             "--name",
-            f"{name}",
+            f"{fp.name}",
         ]
         if keep is not None:
             cmd.append("--keep")
@@ -70,9 +69,6 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="Path to the output directory where the npy files will be saved.",
-    )
-    parser.add_argument(
-        "--name", type=str, help="Name to put in front of the *.npy file names."
     )
     parser.add_argument(
         "--keep",
@@ -121,7 +117,6 @@ if __name__ == "__main__":
         args.output,
         args.keep,
         args.remove,
-        args.name,
         args.suffix,
         args.csv,
         args.file_name,
