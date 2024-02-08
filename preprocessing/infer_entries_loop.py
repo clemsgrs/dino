@@ -28,7 +28,7 @@ def infer_entries(
             "--output_root",
             f"{output_dir}",
             "--name",
-            f"{fp.name}",
+            f"{fp.stem}",
         ]
         if keep is not None:
             cmd.append("--keep")

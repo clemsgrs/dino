@@ -45,7 +45,7 @@ def infer_entries_from_tarball(
                 if (
                     member.isfile()
                 ):  # Process only files (not directories, symlinks, etc.)
-                    filename = member.name
+                    filename = Path(member.name).name
                     start_offset = member.offset_data
                     end_offset = member.offset_data + member.size
 
