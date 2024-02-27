@@ -98,7 +98,7 @@ class PathologyFoundationDataset(VisionDataset):
         cohort_name = self._cohort_names[cohort_idx]
         # filepaths_dict = self._get_filepaths_dict(cohort_name)
         # filepath = filepaths_dict[file_idx]
-        filepath = file_idx
+        filepath = f"{file_idx}"
         class_mmap = self._mmap_tarball(cohort_name)
         data = class_mmap[start_offset:end_offset]
         return data, Path(filepath)

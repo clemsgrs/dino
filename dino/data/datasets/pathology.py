@@ -61,7 +61,7 @@ class PathologyDataset(VisionDataset):
         entry = self._entries[index]
         file_idx, start_offset, end_offset = entry[1], entry[2], entry[3]
         # filepath = self._filepaths[file_idx]
-        filepath = file_idx
+        filepath = f"{file_idx}"
         mapped_data = self._mmap_tarball[start_offset:end_offset]
         return mapped_data, Path(filepath)
 
