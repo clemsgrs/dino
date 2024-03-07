@@ -5,6 +5,7 @@ from .utils import (
     has_batchnorms,
     get_params_groups,
     compute_time,
+    update_state_dict,
     start_from_checkpoint,
     resume_from_checkpoint,
 )

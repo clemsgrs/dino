@@ -1,0 +1,22 @@
+data_dir: '/data/pathology/projects/pathology-vlfm/data/downstream_patches_panda_fold_0'
+
+output_dir: 'output'
+experiment_name: 'feature_extraction'
+
+img_size: 256
+patch_size: 16
+
+num_workers: 4
+batch_size: 1
+
+pretrain_vit_patch: '/data/pathology/projects/ais-cap/dataset/panda/hipt/dino/5-fold/vit_256_small_dino_fold_0.pt'
+
+wandb:
+  enable: false
+  project: 'dino'
+  username: 'vlfm'
+  exp_name: '${experiment_name}'
+  tags:
+  dir: '/home/user/'
+  group:
+  resume_id:

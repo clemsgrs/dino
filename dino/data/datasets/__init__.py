@@ -4,3 +4,4 @@ from .pathology import PathologyDataset
 from .foundation import PathologyFoundationDataset
 from .hierarchical import HierarchicalDataset
 from .knn import KNNDataset
+from .image_folder import ImageFolderWithNameDataset

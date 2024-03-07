@@ -59,8 +59,8 @@ For python-based LazyConfig, use "path.key=value".
 def main(args):
     cfg = get_cfg_from_args(args)
 
-    distributed = torch.cuda.device_count() > 1
-    if distributed:
+    run_distributed = torch.cuda.device_count() > 1
+    if run_distributed:
         torch.distributed.init_process_group(backend="nccl")
         gpu_id = int(os.environ["LOCAL_RANK"])
         if gpu_id == 0:
@@ -81,7 +81,7 @@ def main(args):
     else:
         run_id = ""
 
-    if distributed:
+    if run_distributed:
         obj = [run_id]
         torch.distributed.broadcast_object_list(
             obj, 0, device=torch.device(f"cuda:{gpu_id}")
@@ -155,7 +155,7 @@ def main(args):
                 f"Pretraining on {cfg.train.pct*100}% of the data: {len(dataset):,d} samples\n"
             )
 
-    if distributed:
+    if run_distributed:
         sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
     else:
         sampler = torch.utils.data.RandomSampler(dataset)
@@ -203,13 +203,13 @@ def main(args):
     )
 
     # move networks to gpu
-    if distributed:
+    if run_distributed:
         student, teacher = student.to(gpu_id), teacher.to(gpu_id)
     else:
         student, teacher = student.cuda(), teacher.cuda()
 
     # synchronize batch norms (if any)
-    if has_batchnorms(student) and distributed:
+    if has_batchnorms(student) and run_distributed:
         # we need DDP wrapper to have synchro batch norms working...
         student = nn.SyncBatchNorm.convert_sync_batchnorm(student)
         teacher = nn.SyncBatchNorm.convert_sync_batchnorm(teacher)
@@ -221,7 +221,7 @@ def main(args):
         # teacher_without_ddp and teacher are the same thing
         teacher_without_ddp = teacher
 
-    if distributed:
+    if run_distributed:
         student = nn.parallel.DistributedDataParallel(
             student, device_ids=[gpu_id], output_device=gpu_id
         )
@@ -245,7 +245,7 @@ def main(args):
         cfg.teacher.warmup_teacher_temp_epochs,
         cfg.optim.epochs,
     )
-    if distributed:
+    if run_distributed:
         dino_loss = dino_loss.to(gpu_id)
     else:
         dino_loss = dino_loss.cuda()
@@ -286,7 +286,7 @@ def main(args):
 
     # leverage torch native fault tolerance
     snapshot_path = Path(snapshot_dir, "latest.pt")
-    if distributed:
+    if run_distributed:
         if snapshot_path.exists():
             if is_main_process():
                 print("Loading snapshot")
@@ -346,7 +346,7 @@ def main(args):
             if cfg.wandb.enable and is_main_process():
                 log_dict = {"epoch": epoch}
 
-            if distributed:
+            if run_distributed:
                 data_loader.sampler.set_epoch(epoch)
 
             # training one epoch of DINO
@@ -451,14 +451,14 @@ def main(args):
                     wandb.log(log_dict, step=epoch)
 
             # ensure other gpus wait until gpu_0 is finished with tuning before starting next training iteration
-            if distributed:
+            if run_distributed:
                 torch.distributed.barrier()
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print("Pretraining time {}".format(total_time_str))
 
-    if distributed:
+    if run_distributed:
         torch.distributed.destroy_process_group()
 
 
