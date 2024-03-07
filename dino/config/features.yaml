@@ -10,6 +10,7 @@ num_workers: 4
 batch_size: 1
 
 pretrain_vit_patch: '/data/pathology/projects/ais-cap/dataset/panda/hipt/dino/5-fold/vit_256_small_dino_fold_0.pt'
+img_size_pretrained:
 
 wandb:
   enable: false

@@ -92,6 +92,7 @@ def main(args):
         patch_size=cfg.patch_size,
         pretrain_vit_patch=cfg.pretrain_vit_patch,
         verbose=(gpu_id in [-1, 0]),
+        img_size_pretrained=cfg.img_size_pretrained,
     )
 
     transform = make_classification_eval_transform()
