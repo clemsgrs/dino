@@ -14,6 +14,8 @@ def write_config(cfg, output_dir, name="config.yaml"):
 
 
 def get_cfg_from_args(args):
+    args.output_dir = os.path.abspath(args.output_dir)
+    args.opts += [f"output_dir={args.output_dir}"]
     if args.level == "patch":
         default_cfg = OmegaConf.create(patch_default_config)
     elif args.level == "region":

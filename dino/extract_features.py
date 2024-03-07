@@ -32,6 +32,13 @@ For python-based LazyConfig, use "path.key=value".
         default=None,
         nargs=argparse.REMAINDER,
     )
+    parser.add_argument(
+        "--output-dir",
+        "--output_dir",
+        default="",
+        type=str,
+        help="Output directory to save logs and checkpoints",
+    )
 
     return parser
 
