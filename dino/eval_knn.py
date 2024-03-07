@@ -318,30 +318,6 @@ def knn_classifier(
     return acc, auc
 
 
-def load_features_and_labels_from_disk(
-    df, features_dir, label_name: str = "label", header: str = "query"
-):
-    all_feature_paths = [fp for fp in features_dir.glob("*.pt")]
-    feature_paths = [fp for fp in all_feature_paths if fp.stem in df.filename.values]
-
-    labels = df[label_name].values
-    labels = torch.tensor(labels).long()
-
-    features = []
-    with tqdm.tqdm(
-        feature_paths,
-        desc=f"Loading {header} features from disk",
-        unit=" img",
-        leave=True,
-    ) as t:
-        for fp in t:
-            f = torch.load(fp)
-            features.append(f)
-    features = torch.stack(features)
-
-    return features, labels
-
-
 def main(args):
     cfg = get_cfg_from_args(args)
 
