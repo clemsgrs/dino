@@ -1,2 +1,7 @@
 from .dataset import ImagePretrainingDataset, HierarchicalPretrainingDataset
-from .augmentations import PatchDataAugmentationDINO, RegionDataAugmentationDINO
+from .datasets import ImageFolderWithNameDataset
+from .augmentations import (
+    PatchDataAugmentationDINO,
+    RegionDataAugmentationDINO,
+    make_classification_eval_transform,
+)
