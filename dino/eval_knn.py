@@ -299,12 +299,10 @@ def load_features_and_labels_from_disk(
     df, features_dir, label_name: str = "label", header: str = "query"
 ):
     all_feature_paths = [fp for fp in features_dir.glob("*.pt")]
-    feature_paths = [fp for fp in all_feature_paths if fp.stem in df.filename.values]
+    df["stem"] = df.filename.apply(lambda x: Path(x).stem)
+    feature_paths = [fp for fp in all_feature_paths if fp.stem in df.stem.values]
 
-    labels = df[label_name].values
-    labels = torch.tensor(labels).long()
-
-    features = []
+    features, labels = [], []
     with tqdm.tqdm(
         feature_paths,
         desc=f"Loading {header} features from disk",
@@ -314,7 +312,12 @@ def load_features_and_labels_from_disk(
         for fp in t:
             f = torch.load(fp)
             features.append(f)
+            label = df[df.stem == fp.stem][label_name].values[0]
+            labels.append(label)
+
     features = torch.stack(features)
+    features = nn.functional.normalize(features, dim=1, p=2)
+    labels = torch.tensor(labels).long()
 
     return features, labels
 
@@ -351,7 +354,7 @@ def main(cfg: DictConfig):
     output_dir = Path(cfg.output_dir, cfg.experiment_name, run_id)
     if is_main_process():
         if output_dir.exists():
-            print(f"{output_dir} already exists! deleting it...")
+            print(f"{output_dir} already exists!")
         output_dir.mkdir(parents=True, exist_ok=True)
 
     query_df = pd.read_csv(cfg.data.query_csv)

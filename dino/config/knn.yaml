@@ -1,30 +1,30 @@
 data:
-  features_dir:
+  features_dir: ''
   query_csv: ''
   test_csv: ''
 
 output_dir: 'output'
 experiment_name: 'eval'
 
-batch_size_per_gpu: 256
+batch_size_per_gpu: 16
 
-nb_knn: 20
+nb_knn: [10,20,100,200]
 temperature: 0.07
 save_features: false
-label_name: ''
+label_name: 'label'
 
 model:
   arch: vit_small
   patch_size: 16
-  pretrained_weights: ''
+  pretrained_weights:
   checkpoint_key: 'teacher'
 
 speed:
   use_cuda: true
-  num_workers: 16
+  num_workers: 8
 
 wandb:
-  enable: true
+  enable: false
   project: 'vision'
   username: 'vlfm'
   exp_name: 'eval'
