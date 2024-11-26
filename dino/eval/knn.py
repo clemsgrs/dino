@@ -133,6 +133,7 @@ def extract_feature_pipeline(
     test_df: pd.DataFrame,
     features_dir: str,
     arch: str,
+    input_size: int,
     patch_size: int,
     pretrained_weights: str,
     checkpoint_key: str,
@@ -157,7 +158,7 @@ def extract_feature_pipeline(
     )
 
     # ============ building network ... ============
-    model = vits.__dict__[arch](patch_size=patch_size, num_classes=0)
+    model = vits.__dict__[arch](img_size=input_size, patch_size=patch_size, num_classes=0)
     print(f"Model {arch} {patch_size}x{patch_size} built.")
     model.cuda()
     print("Loading pretrained weights...")
@@ -471,6 +472,7 @@ def main(cfg: DictConfig):
             test_df,
             cfg.features_dir,
             cfg.model.arch,
+            cfg.model.input_size,
             cfg.model.patch_size,
             cfg.model.pretrained_weights,
             cfg.model.checkpoint_key,

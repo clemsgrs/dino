@@ -155,10 +155,11 @@ def main(cfg: DictConfig):
     if is_main_process():
         print("Building student and teacher networks...")
     student = vits.__dict__[cfg.model.arch](
+        img_size=cfg.model.input_size,
         patch_size=cfg.model.patch_size,
         drop_path_rate=cfg.model.drop_path_rate,
     )
-    teacher = vits.__dict__[cfg.model.arch](patch_size=cfg.model.patch_size)
+    teacher = vits.__dict__[cfg.model.arch](img_size=cfg.model.input_size, patch_size=cfg.model.patch_size)
     embed_dim = student.embed_dim
 
     # multi-crop wrapper handles forward with inputs of different resolutions

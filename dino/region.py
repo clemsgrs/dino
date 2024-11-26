@@ -87,7 +87,7 @@ def main(cfg: DictConfig):
         cfg.aug.global_crops_scale,
         cfg.aug.local_crops_number,
         cfg.aug.local_crops_scale,
-        cfg.model.region_size,
+        cfg.model.input_size,
         cfg.model.patch_size,
     )
 
@@ -122,12 +122,12 @@ def main(cfg: DictConfig):
     if is_main_process():
         print("Building student and teacher networks...")
     student = vits.__dict__[cfg.model.arch](
-        img_size=cfg.model.region_size,
+        img_size=cfg.model.input_size,
         patch_size=cfg.model.patch_size,
         drop_path_rate=cfg.model.drop_path_rate,
     )
     teacher = vits.__dict__[cfg.model.arch](
-        img_size=cfg.model.region_size, patch_size=cfg.model.patch_size
+        img_size=cfg.model.input_size, patch_size=cfg.model.patch_size
     )
     embed_dim = student.embed_dim
 

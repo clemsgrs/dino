@@ -462,6 +462,26 @@ def vit_base(
     return model
 
 
+def vit_large(
+    img_size: int = 256,
+    patch_size: int = 16,
+    embed_dim: int = 1024,
+    **kwargs,
+):
+    model = VisionTransformer(
+        img_size=img_size,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+        depth=24,
+        num_heads=16,
+        mlp_ratio=4,
+        qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6),
+        **kwargs,
+    )
+    return model
+
+
 class HierarchicalVisionTransformer(nn.Module):
     """Hierarchical Vision Transformer"""
 

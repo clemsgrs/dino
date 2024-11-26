@@ -15,6 +15,7 @@ label_name: 'label'
 
 model:
   arch: vit_small
+  input_size: 256
   patch_size: 16
   pretrained_weights:
   checkpoint_key: 'teacher'

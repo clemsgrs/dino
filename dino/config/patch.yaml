@@ -9,6 +9,7 @@ resume_from_checkpoint: 'latest.pth'
 
 model:
   arch: 'vit_small'
+  input_size: 256
   patch_size: 16
   out_dim: 65536 # dimensionality of the DINO head output. For complex and large datasets large values (like 65k) work well
   norm_last_layer: False # whether or not to weight normalize the last layer of the DINO head ; not normalizing leads to better performance but can make the training unstable.
