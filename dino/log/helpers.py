@@ -6,7 +6,7 @@ import torch.distributed as dist
 
 from collections import defaultdict, deque
 
-from dino.distributed import is_dist_avail_and_initialized
+from dino.distributed import is_enabled
 
 
 class SmoothedValue(object):
@@ -32,7 +32,7 @@ class SmoothedValue(object):
         """
         Warning: does not synchronize the deque!
         """
-        if not is_dist_avail_and_initialized():
+        if not is_enabled():
             return
         if gpu_id == -1:
             main_device = "cuda"

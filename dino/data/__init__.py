@@ -1,5 +1,5 @@
 from .dataset import ImagePretrainingDataset, HierarchicalPretrainingDataset
-from .datasets import ImageFolderWithNameDataset
+from .datasets import ImageFolderWithFilenameDataset, ImageFolderWithMetadata
 from .augmentations import (
     PatchDataAugmentationDINO,
     RegionDataAugmentationDINO,

@@ -1,1 +1,1 @@
-from .image_folder import ImageFolderWithNameDataset
+from .image_folder import ImageFolderWithFilenameDataset, ImageFolderWithMetadata

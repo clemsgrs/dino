@@ -1,6 +1,5 @@
 import os
 import tqdm
-import hydra
 import datetime
 import numpy as np
 import pandas as pd
@@ -180,7 +179,7 @@ def extract_features(model, loader, distributed, use_cuda=True, multiscale=False
     with tqdm.tqdm(
         loader,
         desc=("Feature extraction"),
-        unit=" slide",
+        unit=" tile",
         ncols=80,
         unit_scale=loader.batch_size,
         leave=True,
@@ -323,11 +322,6 @@ def load_features_and_labels_from_disk(
     return features, labels
 
 
-@hydra.main(
-    version_base="1.2.0",
-    config_path="config",
-    config_name="knn",
-)
 def main(cfg: DictConfig):
     run_distributed = torch.cuda.device_count() > 1
     if run_distributed:

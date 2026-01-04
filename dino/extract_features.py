@@ -2,7 +2,6 @@ import os
 import tqdm
 import wandb
 import torch
-import hydra
 import datetime
 import pandas as pd
 import multiprocessing as mp
@@ -13,12 +12,9 @@ from omegaconf import DictConfig
 from dino.models import PatchEmbedder
 from dino.log import initialize_wandb
 from dino.distributed import is_main_process
-from dino.data import ImageFolderWithNameDataset, make_classification_eval_transform
+from dino.data import ImageFolderWithFilenameDataset, make_classification_eval_transform
 
 
-@hydra.main(
-    version_base="1.2.0", config_path="config/feature_extraction", config_name="patch"
-)
 def main(cfg: DictConfig):
     run_distributed = torch.cuda.device_count() > 1
     if run_distributed:
@@ -65,7 +61,7 @@ def main(cfg: DictConfig):
     )
 
     transform = make_classification_eval_transform()
-    dataset = ImageFolderWithNameDataset(cfg.data_dir, transform)
+    dataset = ImageFolderWithFilenameDataset(cfg.data_dir, transform)
 
     if run_distributed:
         sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)

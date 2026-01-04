@@ -1,0 +1,36 @@
+data:
+  features_dir:
+  query_csv: "/data/temporary/vlfm/data/tile_level_datasets/PANDA/2-class-fold-0/train.csv"
+  test_csv: "/data/temporary/vlfm/data/tile_level_datasets/PANDA/2-class-fold-0/test.csv"
+
+output_dir: 'output'
+experiment_name: 'eval'
+
+batch_size_per_gpu: 16
+
+nb_knn: [10,20,100,200]
+temperature: 0.07
+save_features: false
+label_name: 'label'
+
+model:
+  arch: vit_small
+  input_size: 256
+  patch_size: 14
+  pretrained_weights: "/data/temporary/clement/code/cpg/cobra-demos/pretrain/output/dino/checkpoints/iter_323800.pt"
+  checkpoint_key: 'teacher'
+
+speed:
+  use_cuda: true
+  num_workers: 8
+
+wandb:
+  enable: false
+  project: 'vision'
+  username: 'vlfm'
+  exp_name: 'eval'
+  tags: ['${experiment_name}', 'knn', '${student.arch}']
+  dir: '/home/user'
+  group:
+  to_log:
+  resume_id:

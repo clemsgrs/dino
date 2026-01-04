@@ -1,7 +1,6 @@
 import os
 import sys
 import tqdm
-import hydra
 import numpy as np
 import pandas as pd
 
@@ -434,11 +433,6 @@ def knn_classifier(
     return acc, auc
 
 
-@hydra.main(
-    version_base="1.2.0",
-    config_path="../config/pretraining",
-    config_name="knn",
-)
 def main(cfg: DictConfig):
     distributed = torch.cuda.device_count() > 1
     if distributed:

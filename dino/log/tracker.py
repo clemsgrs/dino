@@ -86,11 +86,7 @@ def update_log_dict(
     results,
     log_dict,
     step: Optional[str] = "step",
-    to_log: Optional[List[str]] = None,
 ):
-    if not to_log:
-        to_log = list(results.keys())
     for r, v in results.items():
-        if r in to_log:
-            wandb.define_metric(f"{prefix}/{r}", step_metric=step)
-            log_dict.update({f"{prefix}/{r}": v})
+        wandb.define_metric(f"{prefix}/{r}", step_metric=step)
+        log_dict.update({f"{prefix}/{r}": v})

@@ -1,0 +1,12 @@
+numpy
+pandas
+pillow
+gdown
+einops
+matplotlib
+torch==%PYTORCH_VERSION%
+torchvision
+tqdm
+scikit-learn
+wandb
+omegaconf
