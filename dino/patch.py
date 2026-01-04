@@ -112,6 +112,7 @@ def main(args):
         cfg.aug.global_crops_scale,
         cfg.aug.local_crops_scale,
         cfg.aug.local_crops_number,
+        solarization=cfg.aug.solarization,
     )
 
     # ============ preparing training data ============

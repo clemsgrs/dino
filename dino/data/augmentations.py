@@ -75,12 +75,15 @@ class Solarization(object):
 class PatchDataAugmentationDINO(object):
     def __init__(
         self,
+        global_crop_size,
+        local_crop_size,
         global_crops_scale,
         local_crops_scale,
         local_crops_number,
         interpolation=transforms.InterpolationMode.BICUBIC,
         mean: Sequence[float] = IMAGENET_DEFAULT_MEAN,
         std: Sequence[float] = IMAGENET_DEFAULT_STD,
+        solarization: bool = False,
     ):
         flip_and_color_jitter = transforms.Compose(
             [
@@ -129,7 +132,7 @@ class PatchDataAugmentationDINO(object):
                 ),
                 flip_and_color_jitter,
                 GaussianBlur(0.1),
-                Solarization(0.2),
+                Solarization(0.2) if solarization else transforms.Lambda(lambda x: x),
                 normalize,
             ]
         )

@@ -4,7 +4,7 @@ output_dir: 'output'
 
 seed: 0
 start_from_checkpoint:
-resume: False
+resume: false
 resume_from_checkpoint: 'latest.pth'
 
 model:
@@ -12,9 +12,9 @@ model:
   input_size: 224
   patch_size: 16
   out_dim: 65536 # dimensionality of the DINO head output. For complex and large datasets large values (like 65k) work well
-  norm_last_layer: False # whether or not to weight normalize the last layer of the DINO head ; not normalizing leads to better performance but can make the training unstable.
+  norm_last_layer: false # whether or not to weight normalize the last layer of the DINO head ; not normalizing leads to better performance but can make the training unstable.
   momentum_teacher: 0.996 # base EMA parameter for teacher update. The value is increased to 1 during training with cosine schedule ; we recommend setting a higher value with small batches: for example use 0.9995 with batch size of 256
-  use_bn_in_head: False # whether to use batch normalizations in projection head
+  use_bn_in_head: false # whether to use batch normalizations in projection head
   warmup_teacher_temp: 0.04 # initial value for the teacher temperature: 0.04 works well in most cases ; try decreasing it if the training loss does not decrease
   teacher_temp: 0.04 # final value (after linear warmup) of the teacher temperature ; for most experiments, anything above 0.07 is unstable ; we recommend starting with the default value of 0.04 and increase this slightly if needed
   warmup_teacher_temp_epochs: 0 # number of warmup epochs for the teacher temperature
@@ -47,7 +47,7 @@ loss:
     delay_epoch: 0
 
 early_stopping:
-  enable: False
+  enable: false
   tune_every: # leave blank if you don't want to use early stopping mechanism
   tracking: 'auc'
   min_max: 'max'
@@ -63,8 +63,8 @@ early_stopping:
   knn:
     k: 20
     temperature: 0.07
-    save_features: False
-    use_cuda: True
+    save_features: false
+    use_cuda: true
 
 optim:
   name: 'adamw' # type of optimizer ; we recommend using adamw with ViTs
@@ -88,13 +88,14 @@ aug:
   local_crops_scale:
     - 0.05
     - 0.4
+  solarization: false
 
 speed:
-  use_fp16: True # whether or not to use half precision for training ; improves training time and memory requirements, but can provoke instability and slight decay of performance ; we recommend disabling mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs
+  use_fp16: true # whether or not to use half precision for training ; improves training time and memory requirements, but can provoke instability and slight decay of performance ; we recommend disabling mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs
   num_workers: 4
 
 wandb:
-  enable: False
+  enable: false
   project: ''
   username: ''
   exp_name: 'patch'
