@@ -5,6 +5,7 @@ from typing import Optional
 from pathlib import Path
 
 from dino.utils import update_state_dict
+from dino.components import grad_reverse
 from dino.models.vision_transformer import vit_small
 
 
@@ -18,12 +19,13 @@ class MultiCropWrapper(nn.Module):
     concatenated features.
     """
 
-    def __init__(self, backbone, head):
+    def __init__(self, backbone, head, return_backbone: bool = False):
         super(MultiCropWrapper, self).__init__()
         # disable layers dedicated to ImageNet labels classification
         backbone.fc, backbone.head = nn.Identity(), nn.Identity()
         self.backbone = backbone
         self.head = head
+        self.return_backbone = return_backbone
 
     def forward(self, x):
         # convert to list
@@ -47,7 +49,10 @@ class MultiCropWrapper(nn.Module):
             output = torch.cat((output, _out))
             start_idx = end_idx
         # Run the head forward on the concatenated features.
-        return self.head(output)
+        if self.return_backbone:
+            return output, self.head(output)
+        else:
+            return self.head(output)
 
 
 class PatchEmbedder(nn.Module):
@@ -106,3 +111,20 @@ class PatchEmbedder(nn.Module):
         # x = [B, 3, img_size, img_size]
         feature = self.vit_patch(x).detach().cpu()  # [B, 384]
         return feature
+
+
+class DomainAdversary(nn.Module):
+    def __init__(self, in_dim: int, num_domains: int, hidden_dim: int = 512, dropout: float = 0.0):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, num_domains),
+        )
+
+    def forward(self, x, grl_lambda: float):
+        # x: [B, D]
+        x_rev = grad_reverse(x, grl_lambda)
+        logits = self.mlp(x_rev)
+        return logits
