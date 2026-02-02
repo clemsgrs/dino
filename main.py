@@ -17,6 +17,7 @@ from torchvision import datasets
 
 import dino.models.vision_transformer as vits
 from dino.components import DINOLoss, EarlyStoppingDINO
+from dino.eval import Tuner
 from dino.data import PatchDataAugmentationDINO
 from dino.distributed import (
     get_global_rank,
@@ -273,6 +274,13 @@ def main(args):
         verbose=True,
     )
 
+    # Initialize tuner for downstream benchmarking
+    tuner = None
+    if cfg.tuning.enable:
+        tuner = Tuner(cfg.tuning, device)
+        if is_main_process():
+            print(f"Tuner initialized with {len(cfg.tuning.benchmarks)} benchmark(s)")
+
     freeze_last_layer_iter = int(cfg.training.freeze_last_layer_pct * total_iterations)
     save_every_iter = int(cfg.training.save_every_pct * total_iterations)
     start_time = time.time()
@@ -333,12 +341,27 @@ def main(args):
                 if fp16_scaler is not None:
                     snapshot["fp16_scaler"] = fp16_scaler.state_dict()
 
+            # Run tuning benchmarks if enabled and at the right epoch
+            tune_results = None
+            primary_results = None
+            if tuner is not None and (epoch + 1) % cfg.tuning.tune_every == 0:
+                tune_results = tuner.tune(student, teacher, epoch)
+                if is_main_process():
+                    # Log tuning results to wandb
+                    if cfg.wandb.enable:
+                        for bench_name, bench_results in tune_results.items():
+                            for model_name, metrics in bench_results.items():
+                                for metric_name, value in metrics.items():
+                                    log_dict[f"tune/{bench_name}/{model_name}/{metric_name}"] = value
+                    # Get primary benchmark results for early stopping
+                    primary_results = tuner.get_primary_results(tune_results)
+
             if is_main_process():
-                early_stopping(epoch, None, snapshot)
+                early_stopping(epoch, primary_results, snapshot)
 
             # log to wandb
             if is_main_process() and cfg.wandb.enable:
-                    wandb.log(log_dict, step=epoch)
+                wandb.log(log_dict, step=epoch)
 
             log_stats = {
                 **{f"train_{k}": v for k, v in train_stats.items()},

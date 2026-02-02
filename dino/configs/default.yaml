@@ -58,6 +58,46 @@ speed:
   use_fp16: true # whether or not to use half precision for training ; improves training time and memory requirements, but can provoke instability and slight decay of performance ; we recommend disabling mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs
   num_workers: 4
 
+early_stopping:
+  enable: false
+  tracking: "accuracy"
+  min_max: "max"
+  patience: 10
+  min_epoch: 5
+  save_every: 0  # set to N to save every N epochs, 0 to disable
+
+tuning:
+  enable: false
+  tune_every: 5  # evaluate every N epochs
+  image_path_col: "image_path"  # column name for image paths in benchmark CSV
+  label_col: "label"  # column name for labels in benchmark CSV
+  partition_col: "partition"  # column name for train/test partition
+
+  benchmarks: []
+  # Example benchmark configuration:
+  # - name: "benchmark_a"
+  #   csv_path: "/path/to/benchmark.csv"
+  #   evaluator: "knn"  # "knn" or "linear"
+  #   primary: true  # use for early stopping (only one benchmark should be primary)
+  #   knn:
+  #     k: 20
+  #     temperature: 0.07
+  #
+  # - name: "benchmark_b"
+  #   csv_path: "/path/to/benchmark_b.csv"
+  #   evaluator: "linear"
+  #   linear:
+  #     epochs: 100
+  #     lr: 0.01
+  #     batch_size: 256
+
+  transform:
+    resize: 256
+    crop_size: 224
+
+  num_workers: 4
+  batch_size_per_gpu: 64
+
 wandb:
   enable: false
   project: "discern"
@@ -66,11 +106,3 @@ wandb:
   tags: ["dino", "${model.arch}"]
   dir: "/tmp/"
   group:
-
-early_stopping:
-  enable: false
-  tracking: "acc"
-  min_max: "max"
-  patience: 10
-  min_epoch: 5
-  save_every: 0  # set to N to save every N epochs, 0 to disable
