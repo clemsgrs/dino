@@ -464,7 +464,7 @@ def vit_base(
 
 def vit_large(
     img_size: int = 256,
-    patch_size: int = 16,
+    patch_size: int = 14,
     embed_dim: int = 1024,
     **kwargs,
 ):

@@ -106,9 +106,6 @@ class PatchDataAugmentationDINO(object):
             ]
         )
 
-        global_crop_size = 224
-        local_crop_size = 96
-
         # first global crop
         self.global_transfo1 = transforms.Compose(
             [

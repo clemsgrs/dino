@@ -3,7 +3,6 @@ import pandas as pd
 
 from PIL import Image
 from pathlib import Path
-from torchvision import datasets
 from typing import Callable, Optional, Any
 from torchvision.datasets.folder import default_loader
 

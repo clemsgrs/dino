@@ -1,77 +1,41 @@
-data_dir: '/data/pathology/projects/clement/discern/data/multi-organ-debug'
-
-output_dir: 'output'
+data_dir: "pretrain/output/tiling/images"
+output_dir: "pretrain/output/dino/multi-organ"
 
 seed: 0
 start_from_checkpoint:
 resume: false
-resume_from_checkpoint: 'latest.pth'
+resume_from_dir:
+resume_from_checkpoint:
 
 model:
-  arch: 'vit_small'
+  arch: "vit_small"
   input_size: 224
-  patch_size: 16
+  patch_size: 14
   out_dim: 65536 # dimensionality of the DINO head output. For complex and large datasets large values (like 65k) work well
   norm_last_layer: false # whether or not to weight normalize the last layer of the DINO head ; not normalizing leads to better performance but can make the training unstable.
   momentum_teacher: 0.996 # base EMA parameter for teacher update. The value is increased to 1 during training with cosine schedule ; we recommend setting a higher value with small batches: for example use 0.9995 with batch size of 256
   use_bn_in_head: false # whether to use batch normalizations in projection head
   warmup_teacher_temp: 0.04 # initial value for the teacher temperature: 0.04 works well in most cases ; try decreasing it if the training loss does not decrease
   teacher_temp: 0.04 # final value (after linear warmup) of the teacher temperature ; for most experiments, anything above 0.07 is unstable ; we recommend starting with the default value of 0.04 and increase this slightly if needed
-  warmup_teacher_temp_epochs: 0 # number of warmup epochs for the teacher temperature
+  warmup_teacher_temp_pct: 0 # number of warmup epochs for the teacher temperature
   drop_path_rate: 0.1 # stochastic depth rate
 
 # training/optimization parameters
 training:
-  nepochs: 50
-  warmup_epochs: 3 # number of epochs for the linear learning-rate warm up.
-  freeze_last_layer: 1 # number of epochs during which we keep the output layer fixed ; typically doing so during the first epoch helps training ; try increasing this value if the loss does not decrease
+  nepochs: 1
+  warmup_pct: 0.06 # percentage of iterations for the linear learning-rate warm up.
+  freeze_last_layer_pct: 0.02 # percentage of iterations during which we keep the output layer fixed ; typically doing so during the first epoch helps training ; try increasing this value if the loss does not decrease
   batch_size_per_gpu: 16
   clip_grad: 3.0 # maximal parameter gradient norm if using gradient clipping ; clipping with norm .3 ~ 1.0 can help optimization for larger ViT architectures. 0 for disabling
   pct:
-
-loss:
-  dino:
-    weight: 1.0
-  organ_triplet:
-    enabled: true
-    torch_implementation: false
-    delay_epoch: 10
-    margin: 0.2
-    weight: 1.0
-    mining: batch_hard  # "batch_hard" or "batch_all"
-  domain_adv:
-    enabled: false
-    weight: 1.0
-    csv: ''
-    label_name: "tss"
-    delay_epoch: 0
-
-early_stopping:
-  enable: false
-  tune_every: # leave blank if you don't want to use early stopping mechanism
-  tracking: 'auc'
-  min_max: 'max'
-  patience: 10
-  min_epoch: 30
-  save_every: 5 # save checkpoint every x epochs
-  downstream:
-    query_csv: ''
-    test_csv: ''
-    label_name: 'label'
-    batch_size_per_gpu: 8
-    num_workers: 4
-  knn:
-    k: 20
-    temperature: 0.07
-    save_features: false
-    use_cuda: true
+  save_every_pct: 0.1 # percentage of iterations at which we save the model
 
 optim:
-  name: 'adamw' # type of optimizer ; we recommend using adamw with ViTs
+  name: "adamw" # type of optimizer ; we recommend using adamw with ViTs
   lr: 0.0005 # learning rate at the end of linear warmup (highest LR used during training) ; the learning rate is linearly scaled with the batch size, and specified here for a reference batch size of 256
   wd: 1e-5
   lr_scheduler:
-    name: 'cosine'
+    name: "cosine"
     min_lr: 1e-6 # target LR at the end of optimization ; we use a cosine LR schedule with linear warmup
     weight_decay: 0.04 # initial value of the weight decay ; with ViT, a smaller value at the beginning of training works well
     weight_decay_end: 0.4 # final value of the weight decay ; we use a cosine schedule for WD and using a larger decay by the end of training improves performance for ViTs
@@ -96,10 +60,9 @@ speed:
 
 wandb:
   enable: false
-  project: ''
-  username: ''
-  exp_name: 'patch'
-  tags: ['dino', '${wandb.exp_name}', '${model.arch}']
-  dir: '/home/user'
+  project: "discern"
+  username: "clemsg"
+  exp_name: "dino"
+  tags: ["dino", "${model.arch}"]
+  dir: "/tmp/"
   group:
-  resume_id:

@@ -53,16 +53,6 @@ def clip_gradients(model, clip):
     return norms
 
 
-def get_grad_norm(model):
-    total_norm = 0
-    for p in model.parameters():
-        if p.grad is not None:
-            param_norm = p.grad.data.norm(2)
-            total_norm += param_norm.item() ** 2
-    total_norm = total_norm ** 0.5
-    return total_norm
-
-
 def cancel_gradients_last_layer(epoch, model, freeze_last_layer):
     if epoch >= freeze_last_layer:
         return

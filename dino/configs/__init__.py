@@ -8,8 +8,7 @@ def load_config(config_name: str):
     return OmegaConf.load(pathlib.Path(__file__).parent.resolve() / config_filename)
 
 
-default_patch_config = load_config("default_patch")
-default_region_config = load_config("default_region")
+default_config = load_config("default")
 
 
 def load_and_merge_config(config_name: str):

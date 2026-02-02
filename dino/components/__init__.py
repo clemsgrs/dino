@@ -1,3 +1,2 @@
-from .loss import DINOLoss, OrganTripletLoss, OrganTripletMarginLoss
+from .loss import DINOLoss
 from .early_stopping import EarlyStoppingDINO
-from .grad import grad_reverse

@@ -6,7 +6,7 @@ import torch.distributed as dist
 
 from collections import defaultdict, deque
 
-from dino.distributed import is_enabled
+import dino.distributed as distributed
 
 
 class SmoothedValue(object):
@@ -32,7 +32,7 @@ class SmoothedValue(object):
         """
         Warning: does not synchronize the deque!
         """
-        if not is_enabled():
+        if not distributed.is_enabled():
             return
         if gpu_id == -1:
             main_device = "cuda"
@@ -68,6 +68,11 @@ class SmoothedValue(object):
     @property
     def value(self):
         return self.deque[-1]
+
+    def reset(self):
+        self.deque.clear()
+        self.total = 0.0
+        self.count = 0
 
     def __str__(self):
         return self.fmt.format(

@@ -8,7 +8,7 @@ from omegaconf import OmegaConf
 
 import dino.distributed as distributed
 from dino.utils import initialize_wandb, fix_random_seeds, get_sha, setup_logging
-from dino.configs import default_patch_config, default_region_config
+from dino.configs import default_config
 
 logger = logging.getLogger("dino")
 
@@ -21,11 +21,7 @@ def write_config(cfg, output_dir, name="config.yaml"):
     return saved_cfg_path
 
 
-def get_cfg_from_file(config_file, level: str):
-    if level == "patch":
-        default_config = default_patch_config
-    elif level == "region":
-        default_config = default_region_config
+def get_cfg_from_file(config_file):
     default_cfg = OmegaConf.create(default_config)
     cfg = OmegaConf.load(config_file)
     cfg = OmegaConf.merge(default_cfg, cfg)
@@ -33,14 +29,10 @@ def get_cfg_from_file(config_file, level: str):
     return cfg
 
 
-def get_cfg_from_args(args, level: str):
+def get_cfg_from_args(args):
     if args.output_dir is not None:
         args.output_dir = os.path.abspath(args.output_dir)
         args.opts += [f"output_dir={args.output_dir}"]
-    if level == "patch":
-        default_config = default_patch_config
-    elif level == "region":
-        default_config = default_region_config
     default_cfg = OmegaConf.create(default_config)
     cfg = OmegaConf.load(args.config_file)
     cfg = OmegaConf.merge(default_cfg, cfg, OmegaConf.from_cli(args.opts))
@@ -48,7 +40,7 @@ def get_cfg_from_args(args, level: str):
     return cfg
 
 
-def setup(args, level: str):
+def setup(args):
     """
     Basic configuration setup without any distributed or GPU-specific initialization.
     This function:
@@ -58,7 +50,7 @@ def setup(args, level: str):
       - Creates the output directory.
     """
     distributed.enable(overwrite=True)
-    cfg = get_cfg_from_args(args, level)
+    cfg = get_cfg_from_args(args)
 
     if cfg.resume:
         run_id = cfg.resume_dirname

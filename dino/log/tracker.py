@@ -2,7 +2,7 @@ import wandb
 import subprocess
 
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 from omegaconf import DictConfig, OmegaConf
 
 
