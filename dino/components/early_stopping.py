@@ -36,6 +36,7 @@ class EarlyStoppingDINO:
 
         self.best_score = None
         self.early_stop = False
+        self.counter = 0
 
     def __call__(self, epoch, results, snapshot):
         if results is not None:

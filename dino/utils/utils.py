@@ -96,7 +96,7 @@ def resume_from_checkpoint(ckpt_path, verbose: bool = True, **kwargs):
     Re-start from checkpoint
     """
     if not Path(ckpt_path).is_file():
-        return
+        return 0
     if verbose:
         print(f"Found checkpoint at {ckpt_path}")
 

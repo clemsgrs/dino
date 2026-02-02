@@ -8,7 +8,6 @@ import sys
 import time
 from pathlib import Path
 
-import pandas as pd
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
@@ -25,9 +24,8 @@ from dino.distributed import (
     is_enabled_and_multiple_gpus,
     is_main_process,
 )
-from dino.eval import prepare_data
 from dino.log import update_log_dict
-from dino.models import MultiCropWrapper, DomainAdversary
+from dino.models import MultiCropWrapper
 from dino.utils import (
     compute_time,
     cosine_scheduler,
@@ -37,7 +35,6 @@ from dino.utils import (
     resume_from_checkpoint,
     setup,
     train_one_epoch,
-    tune_one_epoch,
 )
 
 
@@ -72,39 +69,14 @@ def main(args):
     cudnn.benchmark = True
 
     snapshot_dir = Path(output_dir, "snapshots")
-    features_dir = Path(output_dir, "features")
     if not cfg.resume and is_main_process():
         if not output_dir.exists():
             output_dir.mkdir(parents=True, exist_ok=True)
         snapshot_dir.mkdir(exist_ok=True, parents=True)
-        if cfg.early_stopping.tune_every and cfg.early_stopping.knn.save_features:
-            features_dir.mkdir(exist_ok=True, parents=True)
 
     # preparing data
     if is_main_process():
         print("Loading data...")
-
-    # ============ preparing tuning data ============
-    if is_main_process() and cfg.early_stopping.tune_every:
-        # only do it from master rank as tuning is not being run distributed for now
-        query_df = pd.read_csv(cfg.early_stopping.downstream.query_csv)
-        test_df = pd.read_csv(cfg.early_stopping.downstream.test_csv)
-
-        num_workers = min(mp.cpu_count(), cfg.early_stopping.downstream.num_workers)
-        if "SLURM_JOB_CPUS_PER_NODE" in os.environ:
-            num_workers = min(num_workers, int(os.environ["SLURM_JOB_CPUS_PER_NODE"]))
-
-        downstream_query_loader, downstream_test_loader = prepare_data(
-            query_df,
-            test_df,
-            cfg.early_stopping.downstream.batch_size_per_gpu,
-            False,
-            num_workers,
-            cfg.early_stopping.downstream.label_name,
-        )
-        print(
-            f"Tuning data loaded with {len(downstream_query_loader.dataset)} query patches and {len(downstream_test_loader.dataset)} test patches."
-        )
 
     transform = PatchDataAugmentationDINO(
         cfg.aug.global_crop_size,
@@ -213,13 +185,14 @@ def main(args):
 
     # total number of crops = 2 global crops + local_crops_number
     crops_number = cfg.aug.local_crops_number + 2
+    total_iterations = cfg.training.nepochs * len(data_loader)
     dino_loss = DINOLoss(
         cfg.model.out_dim,
         crops_number,
         cfg.model.warmup_teacher_temp,
         cfg.model.teacher_temp,
-        cfg.model.warmup_teacher_temp_epochs,
-        cfg.training.nepochs,
+        cfg.model.warmup_teacher_temp_pct,
+        total_iterations,
     )
     dino_loss = dino_loss.to(device)
 
@@ -231,9 +204,10 @@ def main(args):
     if cfg.speed.use_fp16:
         fp16_scaler = torch.cuda.amp.GradScaler()
 
+    warmup_epochs = int(cfg.training.warmup_pct * cfg.training.nepochs)
     assert (
-        cfg.training.nepochs >= cfg.training.warmup_epochs
-    ), f"nepochs ({cfg.training.nepochs}) must be greater than or equal to warmup_epochs ({cfg.training.warmup_epochs})"
+        cfg.training.nepochs >= warmup_epochs
+    ), f"nepochs ({cfg.training.nepochs}) must be greater than or equal to warmup_epochs ({warmup_epochs})"
     base_lr = (
         cfg.optim.lr * (cfg.training.batch_size_per_gpu * get_global_size()) / 256.0
     )
@@ -242,7 +216,7 @@ def main(args):
         cfg.optim.lr_scheduler.min_lr,
         cfg.training.nepochs,
         len(data_loader),
-        warmup_epochs=cfg.training.warmup_epochs,
+        warmup_epochs=warmup_epochs,
     )
     wd_schedule = cosine_scheduler(
         cfg.optim.lr_scheduler.weight_decay,
@@ -299,7 +273,8 @@ def main(args):
         verbose=True,
     )
 
-    stop = False
+    freeze_last_layer_iter = int(cfg.training.freeze_last_layer_pct * total_iterations)
+    save_every_iter = int(cfg.training.save_every_pct * total_iterations)
     start_time = time.time()
 
     with tqdm.tqdm(
@@ -337,8 +312,11 @@ def main(args):
                 cfg.training.nepochs,
                 fp16_scaler,
                 cfg.training.clip_grad,
-                cfg.training.freeze_last_layer,
+                freeze_last_layer_iter,
+                save_every_iter,
+                snapshot_dir,
                 gpu_id,
+                log_to_wandb=cfg.wandb.enable,
             )
 
             if cfg.wandb.enable and is_main_process():
@@ -355,44 +333,8 @@ def main(args):
                 if fp16_scaler is not None:
                     snapshot["fp16_scaler"] = fp16_scaler.state_dict()
 
-            # only run tuning on rank 0, otherwise one has to take care of gathering knn metrics from multiple gpus
-            tune_results = None
-            if (
-                cfg.early_stopping.enable
-                and cfg.early_stopping.tune_every
-                and epoch % cfg.early_stopping.tune_every == 0
-                and is_main_process()
-            ):
-                tune_results = tune_one_epoch(
-                    epoch,
-                    student,
-                    teacher_without_ddp,
-                    downstream_query_loader,
-                    downstream_test_loader,
-                    features_dir,
-                    cfg.model.arch,
-                    cfg.model.patch_size,
-                    cfg.model.drop_path_rate,
-                    cfg.early_stopping.knn.k,
-                    cfg.early_stopping.knn.temperature,
-                    False,
-                    cfg.early_stopping.knn.save_features,
-                    cfg.early_stopping.knn.use_cuda,
-                )
-
-                if cfg.wandb.enable and is_main_process():
-                    update_log_dict("tune", tune_results, log_dict, step="epoch")
-
             if is_main_process():
-                early_stopping(epoch, tune_results, snapshot)
-                if early_stopping.early_stop and cfg.early_stopping.enable:
-                    stop = True
-
-            if stop:
-                tqdm.tqdm.write(
-                    f"Stopping early because best {cfg.early_stopping.tracking} was reached {cfg.early_stopping.patience} epochs ago"
-                )
-                break
+                early_stopping(epoch, None, snapshot)
 
             # log to wandb
             if is_main_process() and cfg.wandb.enable:

@@ -66,3 +66,11 @@ wandb:
   tags: ["dino", "${model.arch}"]
   dir: "/tmp/"
   group:
+
+early_stopping:
+  enable: false
+  tracking: "acc"
+  min_max: "max"
+  patience: 10
+  min_epoch: 5
+  save_every: 0  # set to N to save every N epochs, 0 to disable

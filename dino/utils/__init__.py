@@ -1,4 +1,4 @@
-from .train_utils import train_one_epoch, tune_one_epoch
+from .train_utils import train_one_epoch
 from .utils import (
     cosine_scheduler,
     fix_random_seeds,
@@ -9,9 +9,7 @@ from .utils import (
     start_from_checkpoint,
     resume_from_checkpoint,
     initialize_wandb,
-    fix_random_seeds,
     get_sha,
-    update_state_dict,
 )
 from .log_utils import setup_logging
 from .config import setup
