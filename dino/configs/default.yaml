@@ -1,5 +1,5 @@
-data_dir: "pretrain/output/tiling/images"
-output_dir: "pretrain/output/dino/multi-organ"
+data_dir: "/maindisk/pathology-fm/discern/data/multi-center-prostate"
+output_dir: "output/discern"
 
 seed: 0
 start_from_checkpoint:
@@ -9,7 +9,7 @@ resume_from_checkpoint:
 
 model:
   arch: "vit_small"
-  input_size: 224
+  input_size: 256
   patch_size: 14
   out_dim: 65536 # dimensionality of the DINO head output. For complex and large datasets large values (like 65k) work well
   norm_last_layer: false # whether or not to weight normalize the last layer of the DINO head ; not normalizing leads to better performance but can make the training unstable.
@@ -22,10 +22,10 @@ model:
 
 # training/optimization parameters
 training:
-  nepochs: 1
-  warmup_pct: 0.06 # percentage of iterations for the linear learning-rate warm up.
-  freeze_last_layer_pct: 0.02 # percentage of iterations during which we keep the output layer fixed ; typically doing so during the first epoch helps training ; try increasing this value if the loss does not decrease
-  batch_size_per_gpu: 16
+  nepochs: 50
+  warmup_pct: 0.1 # percentage of iterations for the linear learning-rate warm up.
+  freeze_last_layer_pct: 0.01 # percentage of iterations during which we keep the output layer fixed ; typically doing so during the first epoch helps training ; try increasing this value if the loss does not decrease
+  batch_size_per_gpu: 32
   clip_grad: 3.0 # maximal parameter gradient norm if using gradient clipping ; clipping with norm .3 ~ 1.0 can help optimization for larger ViT architectures. 0 for disabling
   pct:
   save_every_pct: 0.1 # percentage of iterations at which we save the model
@@ -97,6 +97,19 @@ tuning:
 
   num_workers: 4
   batch_size_per_gpu: 64
+
+adversarial:
+  enable: false
+  max_lambda: 1.0
+  gamma: 10.0
+  warmup_pct: 0.1
+  classifier:
+    hidden_dims: [1024, 512]
+    dropout: 0.5
+  optim:
+    lr: 0.001
+    weight_decay: 0.0005
+    clip_grad: 0  # 0 to disable, or max gradient norm for domain classifier
 
 wandb:
   enable: false

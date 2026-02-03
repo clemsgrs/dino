@@ -26,7 +26,11 @@ from dino.distributed import (
     is_main_process,
 )
 from dino.log import update_log_dict
-from dino.models import MultiCropWrapper
+from dino.models import MultiCropWrapper, MultiCropWrapperWithFeatures
+from dino.models.domain_classifier import DomainClassifier
+from dino.components.gradient_reversal import GradientReversalLayer
+from dino.components.adversarial_loss import DomainAdversarialLoss
+from dino.data.dataset import CenterAwareImageFolder
 from dino.utils import (
     compute_time,
     cosine_scheduler,
@@ -90,11 +94,18 @@ def main(args):
 
     # ============ preparing training data ============
     dataset_loading_start_time = time.time()
-    dataset = datasets.ImageFolder(cfg.data_dir, transform=transform)
+    num_centers = None
+    if cfg.adversarial.enable:
+        dataset = CenterAwareImageFolder(cfg.data_dir, transform=transform)
+        num_centers = dataset.num_centers
+    else:
+        dataset = datasets.ImageFolder(cfg.data_dir, transform=transform)
     dataset_loading_end_time = time.time() - dataset_loading_start_time
     total_time_str = str(datetime.timedelta(seconds=int(dataset_loading_end_time)))
     if is_main_process():
         print(f"Pretraining data loaded in {total_time_str} ({len(dataset)} patches)")
+        if cfg.adversarial.enable:
+            print(f"Domain adversarial training enabled with {num_centers} centers: {dataset.centers}")
 
     if cfg.training.pct:
         nsample = int(cfg.training.pct * len(dataset))
@@ -134,7 +145,9 @@ def main(args):
     embed_dim = student.embed_dim
 
     # multi-crop wrapper handles forward with inputs of different resolutions
-    student = MultiCropWrapper(
+    # use MultiCropWrapperWithFeatures for adversarial training to extract CLS tokens
+    WrapperClass = MultiCropWrapperWithFeatures if cfg.adversarial.enable else MultiCropWrapper
+    student = WrapperClass(
         student,
         vits.DINOHead(
             embed_dim,
@@ -143,7 +156,7 @@ def main(args):
             norm_last_layer=cfg.model.norm_last_layer,
         ),
     )
-    teacher = MultiCropWrapper(
+    teacher = WrapperClass(
         teacher,
         vits.DINOHead(
             embed_dim,
@@ -197,7 +210,40 @@ def main(args):
     )
     dino_loss = dino_loss.to(device)
 
+    # domain adversarial training components
+    domain_classifier = None
+    domain_loss_fn = None
+    grl = None
+    if cfg.adversarial.enable:
+        grl = GradientReversalLayer()
+
+        domain_classifier = DomainClassifier(
+            input_dim=embed_dim,
+            num_domains=num_centers,
+            hidden_dims=list(cfg.adversarial.classifier.hidden_dims),
+            dropout=cfg.adversarial.classifier.dropout,
+        ).to(device)
+
+        if is_enabled_and_multiple_gpus():
+            domain_classifier = nn.parallel.DistributedDataParallel(
+                domain_classifier, device_ids=[gpu_id], output_device=gpu_id
+            )
+
+        domain_loss_fn = DomainAdversarialLoss(
+            max_lambda=cfg.adversarial.max_lambda,
+            gamma=cfg.adversarial.gamma,
+            total_iterations=total_iterations,
+            warmup_pct=cfg.adversarial.warmup_pct,
+        )
+
+        if is_main_process():
+            print(f"Domain classifier initialized: {embed_dim} -> {num_centers} centers")
+
     params_groups = get_params_groups(student)
+    # add domain classifier parameters to optimizer if enabled
+    if domain_classifier is not None:
+        dc_params = domain_classifier.module.parameters() if is_enabled_and_multiple_gpus() else domain_classifier.parameters()
+        params_groups.append({"params": list(dc_params), "lr": cfg.adversarial.optim.lr, "weight_decay": cfg.adversarial.optim.weight_decay})
     optimizer = torch.optim.AdamW(params_groups)
 
     # for mixed precision training
@@ -325,6 +371,10 @@ def main(args):
                 snapshot_dir,
                 gpu_id,
                 log_to_wandb=cfg.wandb.enable,
+                domain_classifier=domain_classifier,
+                domain_loss_fn=domain_loss_fn,
+                grl=grl,
+                dc_clip_grad=cfg.adversarial.optim.clip_grad if cfg.adversarial.enable else 0,
             )
 
             if cfg.wandb.enable and is_main_process():
@@ -340,6 +390,8 @@ def main(args):
                 }
                 if fp16_scaler is not None:
                     snapshot["fp16_scaler"] = fp16_scaler.state_dict()
+                if domain_classifier is not None:
+                    snapshot["domain_classifier"] = domain_classifier.state_dict()
 
             # Run tuning benchmarks if enabled and at the right epoch
             tune_results = None

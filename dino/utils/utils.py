@@ -53,6 +53,48 @@ def clip_gradients(model, clip):
     return norms
 
 
+def compute_gradient_stats(model, clip=None, model_name="model"):
+    """Compute gradient statistics and optionally clip gradients.
+
+    Args:
+        model: The model to compute gradient stats for.
+        clip: If provided, clip gradients to this max norm (per-parameter).
+        model_name: Name for logging purposes.
+
+    Returns:
+        dict with keys:
+            - {model_name}_grad_norm: Total L2 norm across all parameters
+            - {model_name}_grad_max: Maximum per-parameter gradient norm
+            - {model_name}_clip_fraction: Fraction of parameters that were clipped (0 if clip=None)
+    """
+    total_norm_sq = 0.0
+    max_norm = 0.0
+    num_params = 0
+    num_clipped = 0
+
+    for name, p in model.named_parameters():
+        if p.grad is not None:
+            param_norm = p.grad.data.norm(2).item()
+            total_norm_sq += param_norm ** 2
+            max_norm = max(max_norm, param_norm)
+            num_params += 1
+
+            if clip is not None:
+                clip_coef = clip / (param_norm + 1e-6)
+                if clip_coef < 1:
+                    p.grad.data.mul_(clip_coef)
+                    num_clipped += 1
+
+    total_norm = total_norm_sq ** 0.5
+    clip_fraction = num_clipped / num_params if num_params > 0 else 0.0
+
+    return {
+        f"{model_name}_grad_norm": total_norm,
+        f"{model_name}_grad_max": max_norm,
+        f"{model_name}_clip_fraction": clip_fraction,
+    }
+
+
 def cancel_gradients_last_layer(epoch, model, freeze_last_layer):
     if epoch >= freeze_last_layer:
         return
