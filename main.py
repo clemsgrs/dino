@@ -320,12 +320,13 @@ def main(args):
         verbose=True,
     )
 
-    # Initialize tuner for downstream benchmarking
+    # Initialize unified tuner for downstream/robustness benchmarking
     tuner = None
     if cfg.tuning.enable:
-        tuner = Tuner(cfg.tuning, device)
+        tuning_dir = output_dir / "tuning"
+        tuner = Tuner(cfg.tuning, device, output_dir=tuning_dir)
         if is_main_process():
-            print(f"Tuner initialized with {len(cfg.tuning.benchmarks)} benchmark(s)")
+            print("Unified tuner initialized")
 
     freeze_last_layer_iter = int(cfg.training.freeze_last_layer_pct * total_iterations)
     save_every_iter = int(cfg.training.save_every_pct * total_iterations)
@@ -393,18 +394,19 @@ def main(args):
                 if domain_classifier is not None:
                     snapshot["domain_classifier"] = domain_classifier.state_dict()
 
-            # Run tuning benchmarks if enabled and at the right epoch
+            # Run tuning plugins (downstream + robustness) if enabled
             tune_results = None
             primary_results = None
-            if tuner is not None and (epoch + 1) % cfg.tuning.tune_every == 0:
+            if tuner is not None:
                 tune_results = tuner.tune(student, teacher, epoch)
                 if is_main_process():
-                    # Log tuning results to wandb
                     if cfg.wandb.enable:
-                        for bench_name, bench_results in tune_results.items():
-                            for model_name, metrics in bench_results.items():
-                                for metric_name, value in metrics.items():
-                                    log_dict[f"tune/{bench_name}/{model_name}/{metric_name}"] = value
+                        for metric_name, value in tuner.get_log_metrics(tune_results).items():
+                            log_dict[f"tune/{metric_name}"] = value
+                    else:
+                        logger.info(f"Tuning results at epoch {epoch}:")
+                        for metric_name, value in tuner.get_log_metrics(tune_results).items():
+                            logger.info(f"  {metric_name}: {value}")
                     # Get primary benchmark results for early stopping
                     primary_results = tuner.get_primary_results(tune_results)
 

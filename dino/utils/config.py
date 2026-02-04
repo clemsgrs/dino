@@ -49,7 +49,8 @@ def setup(args):
       - Fixes random seeds.
       - Creates the output directory.
     """
-    distributed.enable(overwrite=True)
+    if torch.cuda.device_count() > 1:
+        distributed.enable(overwrite=True)
     cfg = get_cfg_from_args(args)
 
     if cfg.resume:

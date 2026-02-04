@@ -70,7 +70,7 @@ class DINOLoss(nn.Module):
         m = 1
         if distributed.is_enabled_and_multiple_gpus():
             dist.all_reduce(batch_center)
-            m = distributed.get_world_size()
+            m = distributed.get_global_size()
         batch_center = batch_center / (len(teacher_output) * m)
 
         # ema update

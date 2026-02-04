@@ -176,3 +176,54 @@ def extract_multiple_features(
     labels = torch.tensor(labels).long()
     features = {"student": student_features, "teacher": teacher_features}
     return features, labels
+
+
+@torch.no_grad()
+def extract_features_single_process(
+    student: nn.Module,
+    teacher: nn.Module,
+    loader: torch.utils.data.DataLoader,
+    device: torch.device,
+) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+    """Extract features without distributed collectives (single-process only).
+
+    Use this when only the main process needs to extract features, avoiding
+    distributed deadlocks when other processes are not participating.
+
+    Args:
+        student: Student model backbone
+        teacher: Teacher model backbone
+        loader: DataLoader returning (index, image, label)
+        device: Device to run inference on
+
+    Returns:
+        features: Dict with 'student' and 'teacher' tensors of shape (N, embed_dim)
+        labels: Tensor of shape (N,)
+    """
+    student.eval()
+    teacher.eval()
+
+    student_feats_list = []
+    teacher_feats_list = []
+    labels = []
+
+    with tqdm.tqdm(
+        loader,
+        desc="Feature extraction (single-process)",
+        unit=" batch",
+        leave=False,
+        file=sys.stdout,
+    ) as t:
+        for batch in t:
+            index, img, label = batch
+            img = img.to(device, non_blocking=True)
+            labels.extend(label.tolist())
+
+            student_feats_list.append(student(img).cpu())
+            teacher_feats_list.append(teacher(img).cpu())
+
+    student_features = torch.cat(student_feats_list, dim=0)
+    teacher_features = torch.cat(teacher_feats_list, dim=0)
+    labels = torch.tensor(labels).long()
+
+    return {"student": student_features, "teacher": teacher_features}, labels

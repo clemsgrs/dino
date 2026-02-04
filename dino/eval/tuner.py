@@ -1,133 +1,68 @@
-import sys
-import tqdm
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
 import torch.distributed as dist
 import pandas as pd
 
-from typing import Dict, Any, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 from omegaconf import DictConfig
-from torchvision import transforms
 
-from .dataset import EvalDataset
-from .features import extract_multiple_features
-from .evaluators import KNNEvaluator, LinearEvaluator
-from dino.distributed import is_main_process, is_enabled_and_multiple_gpus
+from dino.distributed import is_enabled_and_multiple_gpus
+from .plugins import BenchmarkPlugin, PathoROBPlugin, StandardProbePlugin
+import warnings
 
 
 class Tuner:
-    """Orchestrates downstream benchmark evaluation during training.
-
-    Evaluates both student and teacher models on multiple benchmarks using
-    either KNN or linear probing.
+    """
+    Single orchestrator for evaluation plugins.
     """
 
-    def __init__(self, cfg: DictConfig, device: torch.device):
-        """
-        Args:
-            cfg: Tuning configuration (cfg.tuning from main config)
-            device: Device to run evaluation on
-        """
+    def __init__(self, cfg: DictConfig, device: torch.device, output_dir: Path):
         self.cfg = cfg
         self.device = device
+        self.output_dir = output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         self.distributed = is_enabled_and_multiple_gpus()
+        self.metrics_dir = self.output_dir / "metrics"
+        self.cache_dir = self.output_dir / "cache"
+        self.metrics_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build transform
-        self.transform = transforms.Compose([
-            transforms.Resize(
-                cfg.transform.resize,
-                interpolation=transforms.InterpolationMode.BICUBIC,
-            ),
-            transforms.CenterCrop(cfg.transform.crop_size),
-            transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        ])
-        print("Tuner transforms")
-        print(self.transform)
+        self.plugins: List[BenchmarkPlugin] = []
+        self.primary_plugin_name: Optional[str] = None
+        self._register_plugins()
 
-        # Pre-build evaluators for each benchmark
-        self.evaluators = {}
-        self.primary_benchmark = None
-        for bench in cfg.benchmarks:
-            name = bench.name
-            if bench.evaluator == "knn":
-                knn_cfg = bench.get("knn", {})
-                self.evaluators[name] = KNNEvaluator(
-                    k=knn_cfg.get("k", 20),
-                    temperature=knn_cfg.get("temperature", 0.07),
-                )
-            elif bench.evaluator == "linear":
-                linear_cfg = bench.get("linear", {})
-                self.evaluators[name] = LinearEvaluator(
-                    epochs=linear_cfg.get("epochs", 100),
-                    lr=linear_cfg.get("lr", 0.01),
-                    batch_size=linear_cfg.get("batch_size", 256),
-                )
-            else:
-                raise ValueError(f"Unknown evaluator type: {bench.evaluator}")
+        for plugin in self.plugins:
+            plugin.bind_runtime(self.output_dir)
 
-            if bench.get("primary", False):
-                self.primary_benchmark = name
+    def _register_plugins(self) -> None:
+        plugin_cfgs = list(self.cfg.get("plugins", []))
+        if plugin_cfgs:
+            for p in plugin_cfgs:
+                if not p.get("enable", True):
+                    continue
+                ptype = str(p.get("type", "")).strip().lower()
+                if ptype == "standard_probe":
+                    plugin = StandardProbePlugin(p, self.device)
+                    self.plugins.append(plugin)
+                    if p.get("primary", False):
+                        self.primary_plugin_name = plugin.name
+                elif ptype == "pathorob":
+                    plugin = PathoROBPlugin(p, self.device, self.output_dir)
+                    self.plugins.append(plugin)
+                    if p.get("primary", False):
+                        warnings.warn("PathoROB plugin cannot be primary")
+                else:
+                    raise ValueError(f"Unknown tuning plugin type: {ptype}")
 
     def _get_backbone(self, model: nn.Module) -> nn.Module:
-        """Extract backbone from MultiCropWrapper or DDP-wrapped model."""
-        # Unwrap DDP if needed
         if hasattr(model, "module"):
             model = model.module
-        # MultiCropWrapper has .backbone attribute
         if hasattr(model, "backbone"):
             return model.backbone
         return model
-
-    def _load_benchmark_data(
-        self, bench_cfg: DictConfig
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[Any]]:
-        """Load and split benchmark CSV into train/test DataFrames."""
-        df = pd.read_csv(bench_cfg.csv_path)
-
-        image_col = self.cfg.image_path_col
-        label_col = self.cfg.label_col
-        partition_col = self.cfg.partition_col
-
-        train_df = df[df[partition_col] == "train"].copy()
-        test_df = df[df[partition_col] == "test"].copy()
-
-        # Fit label encoder on train set for consistent mapping
-        train_dataset = EvalDataset(
-            train_df,
-            transform=self.transform,
-            image_col=image_col,
-            label_col=label_col,
-        )
-        label_encoder = train_dataset.label_encoder
-
-        return train_df, test_df, label_encoder
-
-    def _create_dataloader(
-        self, df: pd.DataFrame, label_encoder: Optional[Any]
-    ) -> torch.utils.data.DataLoader:
-        """Create dataloader for a partition."""
-        dataset = EvalDataset(
-            df,
-            transform=self.transform,
-            image_col=self.cfg.image_path_col,
-            label_col=self.cfg.label_col,
-            label_encoder=label_encoder,
-        )
-
-        if self.distributed:
-            sampler = torch.utils.data.DistributedSampler(dataset, shuffle=False)
-        else:
-            sampler = torch.utils.data.SequentialSampler(dataset)
-
-        return torch.utils.data.DataLoader(
-            dataset,
-            sampler=sampler,
-            batch_size=self.cfg.batch_size_per_gpu,
-            num_workers=self.cfg.num_workers,
-            pin_memory=True,
-            drop_last=False,
-        )
 
     @torch.no_grad()
     def tune(
@@ -135,102 +70,69 @@ class Tuner:
         student: nn.Module,
         teacher: nn.Module,
         epoch: int,
-    ) -> Dict[str, Dict[str, Dict[str, float]]]:
-        """Run evaluation on all benchmarks.
+    ) -> Dict[str, Any]:
+        """Run all due plugins and return a consolidated payload."""
+        # Keep models in eval mode during plugin runs
+        self._get_backbone(student).eval()
+        self._get_backbone(teacher).eval()
 
-        Args:
-            student: Student model (may be DDP-wrapped)
-            teacher: Teacher model (may be DDP-wrapped)
-            epoch: Current training epoch
+        out: Dict[str, Any] = {
+            "plugins": {},
+            "log_metrics": {},
+            "primary": None,
+        }
 
-        Returns:
-            Nested dict: {benchmark_name: {model_name: {metric: value}}}
-            e.g., {"benchmark_a": {"student": {"accuracy": 85.2, ...}, "teacher": {...}}}
-        """
-        # Get backbones (without projection heads)
-        student_backbone = self._get_backbone(student)
-        teacher_backbone = self._get_backbone(teacher)
+        for plugin in self.plugins:
+            if not plugin.should_run(epoch):
+                continue
 
-        student_backbone.eval()
-        teacher_backbone.eval()
+            result = plugin.run(student, teacher, epoch)
+            out["plugins"][plugin.name] = result.payload
 
-        results = {}
+            for k, v in result.log_metrics.items():
+                out["log_metrics"][f"{plugin.name}/{k}"] = float(v)
 
-        for bench_cfg in self.cfg.benchmarks:
-            name = bench_cfg.name
+            if out["primary"] is None and result.primary is not None:
+                out["primary"] = result.primary
 
-            if is_main_process():
-                tqdm.tqdm.write(f"Evaluating benchmark: {name}")
-
-            # Load data
-            train_df, test_df, label_encoder = self._load_benchmark_data(bench_cfg)
-
-            # Create dataloaders
-            train_loader = self._create_dataloader(train_df, label_encoder)
-            test_loader = self._create_dataloader(test_df, label_encoder)
-
-            # Extract features for train set
-            train_features, train_labels = extract_multiple_features(
-                student_backbone, teacher_backbone, train_loader, self.device
-            )
-
-            # Extract features for test set
-            test_features, test_labels = extract_multiple_features(
-                student_backbone, teacher_backbone, test_loader, self.device
-            )
-
-            # L2 normalize features (done on main process only for distributed)
-            if is_main_process():
-                for model_name in ["student", "teacher"]:
-                    train_features[model_name] = nn.functional.normalize(
-                        train_features[model_name], dim=1, p=2
-                    )
-                    test_features[model_name] = nn.functional.normalize(
-                        test_features[model_name], dim=1, p=2
-                    )
-
-            # Run evaluation on rank 0 only
-            if is_main_process():
-                evaluator = self.evaluators[name]
-                bench_results = {}
-
-                for model_name in ["student", "teacher"]:
-                    train_labels_device = train_labels.to(self.device)
-                    test_labels_device = test_labels.to(self.device)
-
-                    metrics = evaluator.evaluate(
-                        train_features[model_name],
-                        train_labels_device,
-                        test_features[model_name],
-                        test_labels_device,
-                    )
-                    bench_results[model_name] = metrics
-
-                    tqdm.tqdm.write(
-                        f"  {model_name}: acc={metrics['accuracy']:.2f}% "
-                        f"bal_acc={metrics['balanced_accuracy']:.2f}% "
-                        f"auc={metrics['auc']:.4f}"
-                    )
-
-                results[name] = bench_results
-
-            # Sync all processes before next benchmark
             if self.distributed:
                 dist.barrier()
 
-        return results
+        self._persist_unified_metrics(results=out, epoch=epoch)
+        return out
 
     def get_primary_results(
-        self, results: Dict[str, Dict[str, Dict[str, float]]]
+        self,
+        results: Dict[str, Any],
     ) -> Optional[Dict[str, Dict[str, float]]]:
-        """Extract results for the primary benchmark (used for early stopping).
+        return results.get("primary")
 
-        Args:
-            results: Full results dict from tune()
+    def get_log_metrics(self, results: Dict[str, Any]) -> Dict[str, float]:
+        return results.get("log_metrics", {})
 
-        Returns:
-            Dict with 'student' and 'teacher' metrics, or None if no primary benchmark
-        """
-        if self.primary_benchmark is None:
-            return None
-        return results.get(self.primary_benchmark)
+    def _persist_unified_metrics(self, results: Dict[str, Any], epoch: int) -> None:
+        if self.metrics_dir is None:
+            return
+
+        rows: List[Dict[str, Any]] = []
+        plugins_payload = results.get("plugins", {})
+        for plugin_name, payload in plugins_payload.items():
+            if isinstance(payload, dict) and "rows" in payload and isinstance(payload["rows"], list):
+                for row in payload["rows"]:
+                    if "plugin" not in row:
+                        row = dict(row)
+                        row["plugin"] = plugin_name
+                    rows.append(row)
+
+        if not rows:
+            return
+
+        df = pd.DataFrame(rows)
+        out_csv = self.metrics_dir / f"epoch_{epoch+1:04d}.csv"
+        df.to_csv(out_csv, index=False)
+        roll_csv = self.metrics_dir / "all_metrics.csv"
+        if roll_csv.exists():
+            old = pd.read_csv(roll_csv)
+            pd.concat([old, df], axis=0).reset_index(drop=True).to_csv(roll_csv, index=False)
+        else:
+            df.to_csv(roll_csv, index=False)

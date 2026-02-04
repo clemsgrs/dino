@@ -74,29 +74,85 @@ tuning:
   partition_col: "partition"  # column name for train/test partition
 
   benchmarks: []
-  # Example benchmark configuration:
-  # - name: "benchmark_a"
-  #   csv_path: "/path/to/benchmark.csv"
-  #   evaluator: "knn"  # "knn" or "linear"
-  #   primary: true  # use for early stopping (only one benchmark should be primary)
-  #   knn:
-  #     k: 20
-  #     temperature: 0.07
-  #
-  # - name: "benchmark_b"
-  #   csv_path: "/path/to/benchmark_b.csv"
-  #   evaluator: "linear"
-  #   linear:
-  #     epochs: 100
-  #     lr: 0.01
-  #     batch_size: 256
-
-  transform:
-    resize: 256
-    crop_size: 224
-
-  num_workers: 4
-  batch_size_per_gpu: 64
+  # Plugin-based orchestrator configuration (recommended).
+  # Example:
+  # plugins:
+    # - type: "standard_probe"
+    #   enable: false
+    #   tune_every: 5
+    #   image_path_col: "image_path"
+    #   label_col: "label"
+    #   partition_col: "partition"
+    #   transforms:
+    #     resize: 256
+    #     crop_size: 224
+    #   num_workers: 4
+    #   batch_size_per_gpu: 64
+    #   benchmarks:
+    #     - name: "benchmark_a"
+    #       csv_path: "/path/to/benchmark.csv"
+    #       evaluator: "knn"
+    #       primary: false
+    #       knn: {k: 20, temperature: 0.07}
+    #     - name: "benchmark_a"
+    #       csv_path: "/path/to/benchmark.csv"
+    #       evaluator: "linear"
+    #       primary: false
+    #       linear: {epochs: 100, lr: 0.01, batch_size: 256}
+    # - type: "pathorob"
+    #   enable: true
+    #   tune_every: 1  # evaluate every 5 epochs to reduce overhead
+    #   seed: 0
+    #   max_pairs: 2  # limit pairs for fast debugging
+    #   transforms:
+    #     resize: 256
+    #     crop_size: 224
+    #   num_workers: 4
+    #   batch_size_per_gpu: 64
+    #   ri: # robustness index
+    #     enable: true
+    #     k_selection_policy: "paper_median_fixed"  # or "knn_bacc"
+    #     default_k: 5  # small k for tiny dataset
+    #     fixed_k:
+    #       camelyon_tiny: 5  # tiny dataset k
+    #     k_candidates: [3, 5, 7]  # small candidates for debugging
+    #   apd: # average performance drop
+    #     enable: true
+    #     repetitions: 1  # minimal for tiny dataset debugging
+    #     id_test_fraction: 0.1  # small fraction to keep more training samples
+    #     correlation_levels: [0.0, 1.0]  # minimal for debugging
+    #   clustering:
+    #     enable: true
+    #     repeats: 2  # minimal for debugging
+    #     k_min: 2
+    #     k_max: 5  # minimal for debugging
+    #   datasets:
+    #     camelyon_tiny:  # Using tiny dataset for debugging
+    #       enable: true
+    #       manifest_csv: "/data/pathology/projects/clement/code/dino/data/pathorob_camelyon_tiny/benchmark.csv"
+    #       id_centers: ["RUMC", "UMCU"]
+    #       ood_centers: ["CWZ"]
+    #     tcga_2x2:
+    #       enable: false
+    #       manifest_csv: ""
+    #       id_centers: []
+    #       ood_centers: []
+    #     tcga_4x4:
+    #       enable: false
+    #       manifest_csv: ""
+    #       id_centers: []
+    #       ood_centers: []
+    #     tolkach_2x2:
+    #       enable: false
+    #       manifest_csv: ""
+    #       id_centers: ["WNS", "CHA"]
+    #       ood_centers: []
+    #     tolkach_esca:
+    #       enable: false
+    #       manifest_csv: ""
+    #       id_centers: ["WNS", "CHA", "UKK"]
+    #       ood_centers: ["TCGA"]
+  plugins: []
 
 adversarial:
   enable: false
