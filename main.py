@@ -375,7 +375,6 @@ def main(args):
                 save_every_iter,
                 snapshot_dir,
                 gpu_id,
-                log_to_wandb=cfg.wandb.enable,
                 domain_classifier=domain_classifier,
                 domain_loss_fn=domain_loss_fn,
                 grl=grl,

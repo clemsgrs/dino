@@ -47,7 +47,7 @@ class StandardProbePlugin(BenchmarkPlugin):
             ]
         )
 
-        logger.info(f"[StandardProbe] Using transform key: {self.transform_key}")
+        logger.info(f"[StandardProbe] Using transforms: {self.transform_key}")
 
         self.evaluators = {}
         self.primary_benchmark = None

@@ -1,5 +1,5 @@
 data_dir: "/maindisk/pathology-fm/discern/data/multi-center-prostate"
-output_dir: "output/discern"
+output_dir: "/data/pathology/projects/clement/discern/dino"
 
 seed: 0
 start_from_checkpoint:
@@ -9,7 +9,7 @@ resume_from_checkpoint:
 
 model:
   arch: "vit_small"
-  input_size: 256
+  input_size: 448
   patch_size: 14
   out_dim: 65536 # dimensionality of the DINO head output. For complex and large datasets large values (like 65k) work well
   norm_last_layer: false # whether or not to weight normalize the last layer of the DINO head ; not normalizing leads to better performance but can make the training unstable.
@@ -27,7 +27,8 @@ training:
   freeze_last_layer_pct: 0.01 # percentage of iterations during which we keep the output layer fixed ; typically doing so during the first epoch helps training ; try increasing this value if the loss does not decrease
   batch_size_per_gpu: 32
   clip_grad: 3.0 # maximal parameter gradient norm if using gradient clipping ; clipping with norm .3 ~ 1.0 can help optimization for larger ViT architectures. 0 for disabling
-  pct:
+  pct: # percentage of total training set to use for training
+  # pct: 0.1 # percentage of total training set to use for training
   save_every_pct: 0.1 # percentage of iterations at which we save the model
 
 optim:
@@ -41,8 +42,8 @@ optim:
     weight_decay_end: 0.4 # final value of the weight decay ; we use a cosine schedule for WD and using a larger decay by the end of training improves performance for ViTs
 
 aug:
-  global_crop_size: 224 # size of the global views
-  local_crop_size: 96 # size of the local views
+  global_crop_size: 392 # size of the global views
+  local_crop_size: 168 # size of the local views
   # scale range of the cropped image before resizing, relatively to the origin image ; used for large global view cropping ; when disabling multi-crop (local_crops_number: 0), we recommand using a wider range of scale (global_crops_scale: (0.14, 1))
   global_crops_scale:
     - 0.4
@@ -56,7 +57,7 @@ aug:
 
 speed:
   use_fp16: true # whether or not to use half precision for training ; improves training time and memory requirements, but can provoke instability and slight decay of performance ; we recommend disabling mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs
-  num_workers: 4
+  num_workers: 16
 
 early_stopping:
   enable: false
@@ -67,93 +68,68 @@ early_stopping:
   save_every: 0  # set to N to save every N epochs, 0 to disable
 
 tuning:
-  enable: false
-  tune_every: 5  # evaluate every N epochs
-  image_path_col: "image_path"  # column name for image paths in benchmark CSV
-  label_col: "label"  # column name for labels in benchmark CSV
-  partition_col: "partition"  # column name for train/test partition
-
-  benchmarks: []
-  # Plugin-based orchestrator configuration (recommended).
-  # Example:
-  # plugins:
-    # - type: "standard_probe"
-    #   enable: false
-    #   tune_every: 5
-    #   image_path_col: "image_path"
-    #   label_col: "label"
-    #   partition_col: "partition"
-    #   transforms:
-    #     resize: 256
-    #     crop_size: 224
-    #   num_workers: 4
-    #   batch_size_per_gpu: 64
-    #   benchmarks:
-    #     - name: "benchmark_a"
-    #       csv_path: "/path/to/benchmark.csv"
-    #       evaluator: "knn"
-    #       primary: false
-    #       knn: {k: 20, temperature: 0.07}
-    #     - name: "benchmark_a"
-    #       csv_path: "/path/to/benchmark.csv"
-    #       evaluator: "linear"
-    #       primary: false
-    #       linear: {epochs: 100, lr: 0.01, batch_size: 256}
-    # - type: "pathorob"
-    #   enable: true
-    #   tune_every: 5
-    #   seed: 42
-    #   max_pairs: 0  # max (2 classes × 2 centers) pairs for RI/clustering; 0 = no limit
-    #   transforms:
-    #     resize: 256
-    #     crop_size: 224
-    #   num_workers: 4
-    #   batch_size_per_gpu: 32
-    #   ri:
-    #     enable: true
-    #     k_selection_policy: "paper_median_fixed"
-    #     default_k: 5
-    #     fixed_k:
-    #       camelyon: 5
-    #     k_candidates: [3, 5, 7, 10, 15]
-    #   apd:
-    #     enable: true
-    #     mode: "paper"  # "paper" uses exact allocations from PathoROB paper, "custom" for custom V levels
-    #     repetitions: 3
-    #     id_test_fraction: 0.2
-    #     correlation_levels: [0.0, 0.25, 0.5, 0.75, 1.0]  # only used when mode="custom"
-    #   clustering:
-    #     enable: true
-    #     repeats: 5
-    #     k_min: 2
-    #     k_max: 10
-    #   datasets:
-    #     camelyon:
-    #       enable: true
-    #       manifest_csv: "data/pathorob/camelyon/benchmark.csv"
-    #       id_centers: ["RUMC", "UMCU"]
-    #       ood_centers: ["CWZ", "RST", "LPON"]
-  plugins: []
-
-adversarial:
-  enable: false
-  max_lambda: 1.0
-  gamma: 10.0
-  warmup_pct: 0.1
-  classifier:
-    hidden_dims: [1024, 512]
-    dropout: 0.5
-  optim:
-    lr: 0.001
-    weight_decay: 0.0005
-    clip_grad: 0  # 0 to disable, or max gradient norm for domain classifier
+  enable: true
+  plugins:
+    - type: "standard_probe"
+      enable: false
+      tune_every: 5
+      image_path_col: "image_path"
+      label_col: "label"
+      partition_col: "partition"
+      transforms:
+        resize: 256
+        crop_size: 224
+      num_workers: 16
+      batch_size_per_gpu: 32
+      benchmarks:
+        - name: "benchmark_a"
+          csv_path: "/path/to/benchmark.csv"
+          evaluator: "knn"
+          primary: false
+          knn: {k: 20, temperature: 0.07}
+        - name: "benchmark_a"
+          csv_path: "/path/to/benchmark.csv"
+          evaluator: "linear"
+          primary: false
+          linear: {epochs: 100, lr: 0.01, batch_size: 256}
+    - type: "pathorob"
+      enable: true
+      tune_every: 1
+      seed: 42
+      max_pairs: 0  # max (2 classes × 2 centers) pairs for RI/clustering; 0 = no limit
+      transforms:
+        resize: 256
+        crop_size: 224
+      num_workers: 16
+      batch_size_per_gpu: 32
+      ri:
+        enable: true
+        k_selection_policy: "paper_median_fixed"
+        default_k: 5
+        fixed_k:
+          camelyon: 5
+        k_candidates: [3, 5, 7, 10, 15]
+      apd:
+        enable: true
+        mode: "paper"  # "paper" uses exact allocations from PathoROB paper, "custom" for custom V levels
+        repetitions: 3
+        id_test_fraction: 0.2
+        correlation_levels: [0.0, 0.25, 0.5, 0.75, 1.0]  # only used when mode="custom"
+      clustering:
+        enable: true
+        repeats: 5
+        k_min: 2
+        k_max: 10
+      datasets:
+        camelyon:
+          enable: true
+          manifest_csv: "data/pathorob/camelyon/benchmark.csv"
+          id_centers: ["RUMC", "UMCU"]
+          ood_centers: ["CWZ", "RST", "LPON"]
 
 wandb:
-  enable: false
+  enable: true
   project: "discern"
   username: "clemsg"
   exp_name: "dino"
-  tags: ["dino", "${model.arch}"]
-  dir: "/home/user/"
-  group:
-  resume_id:
+  tags: ["dino", "${model.arch}", "${model.input_size}"]

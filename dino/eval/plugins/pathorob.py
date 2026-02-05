@@ -21,6 +21,7 @@ from dino.eval.pathorob.apd import compute_apd
 from dino.eval.pathorob.clustering import compute_clustering_score
 from dino.eval.pathorob.datasets import load_manifest
 from dino.eval.pathorob.ri import compute_ri
+from dino.eval.pathorob.allocations import get_paper_metadata
 from dino.eval.pathorob.splits import generate_apd_splits
 
 from .base import BenchmarkPlugin, PluginResult
@@ -58,7 +59,7 @@ class PathoROBPlugin(BenchmarkPlugin):
             f"resize={cfg.transforms.resize}|crop={cfg.transforms.crop_size}|"
             "norm=imagenet"
         )
-        logging.info(f"[PathoROB] Using transform key: {self.transform_key}")
+        logging.info(f"[PathoROB] Using transforms: {self.transform_key}")
 
         self._manifest_cache: Dict[str, pd.DataFrame] = {}
         self._apd_split_cache: Dict[str, List[pd.DataFrame]] = {}
@@ -121,13 +122,81 @@ class PathoROBPlugin(BenchmarkPlugin):
             out[model_name] = arr / norms
         return out
 
+    def _get_split_params(self, dataset_cfg: DictConfig) -> Dict[str, Any]:
+        """Get current split generation parameters as a dict for comparison."""
+        return {
+            "repetitions": int(self.cfg.apd.repetitions),
+            "id_test_fraction": float(self.cfg.apd.id_test_fraction),
+            "seed": int(self.cfg.seed),
+            "mode": str(self.cfg.apd.get("mode", "paper")),
+            "id_centers": sorted(list(dataset_cfg.id_centers)),
+            "ood_centers": sorted(list(dataset_cfg.ood_centers)),
+            # Only include correlation_levels if mode is custom
+            "correlation_levels": (
+                sorted(list(self.cfg.apd.correlation_levels))
+                if self.cfg.apd.get("mode", "paper") == "custom"
+                else None
+            ),
+        }
+
+    def _validate_paper_mode_centers(self, dataset_name: str, dataset_cfg: DictConfig) -> None:
+        """Validate that config centers match paper specification when using paper mode."""
+        mode = str(self.cfg.apd.get("mode", "paper"))
+        if mode != "paper":
+            return
+
+        try:
+            paper_classes, paper_id, paper_ood = get_paper_metadata(dataset_name)
+        except ValueError:
+            # Dataset not in paper, can't validate
+            return
+
+        config_id = sorted(list(dataset_cfg.id_centers))
+        config_ood = sorted(list(dataset_cfg.ood_centers))
+
+        if config_id != sorted(paper_id):
+            raise ValueError(
+                f"[APD] Paper mode requires id_centers={paper_id} for {dataset_name}, "
+                f"but config has {config_id}. Use mode='custom' for custom centers."
+            )
+        if config_ood != sorted(paper_ood):
+            raise ValueError(
+                f"[APD] Paper mode requires ood_centers={paper_ood} for {dataset_name}, "
+                f"but config has {config_ood}. Use mode='custom' for custom centers."
+            )
+
     def _ensure_apd_splits(self, dataset_name: str, dataset_cfg: DictConfig, manifest_df: pd.DataFrame) -> List[pd.DataFrame]:
         if dataset_name in self._apd_split_cache:
             return self._apd_split_cache[dataset_name]
 
-        split_files = sorted((self.splits_dir / dataset_name).glob("rep_*/split_*.csv"))
+        # Validate centers match paper spec when in paper mode
+        self._validate_paper_mode_centers(dataset_name, dataset_cfg)
+
+        split_dir = self.splits_dir / dataset_name
+        metadata_file = split_dir / "split_params.json"
+        split_files = sorted(split_dir.glob("rep_*/split_*.csv"))
+
+        current_params = self._get_split_params(dataset_cfg)
+        need_regenerate = True
+
+        if split_files and metadata_file.exists():
+            try:
+                with open(metadata_file) as f:
+                    saved_params = json.load(f)
+                if saved_params == current_params:
+                    need_regenerate = False
+                    logger.info(f"[APD] Loading existing splits for {dataset_name} (params match)")
+                else:
+                    logger.info(f"[APD] Regenerating splits for {dataset_name} (params changed)")
+                    logger.debug(f"[APD] Old params: {saved_params}")
+                    logger.debug(f"[APD] New params: {current_params}")
+            except (json.JSONDecodeError, KeyError):
+                logger.warning(f"[APD] Could not read split metadata, regenerating splits")
+        elif split_files:
+            logger.warning(f"[APD] Found splits but no metadata file, regenerating to ensure consistency")
+
         splits: List[pd.DataFrame] = []
-        if split_files:
+        if not need_regenerate:
             for p in split_files:
                 splits.append(pd.read_csv(p))
         else:
@@ -136,12 +205,17 @@ class PathoROBPlugin(BenchmarkPlugin):
                 output_dir=self.splits_dir,
                 dataset_name=dataset_name,
                 repetitions=int(self.cfg.apd.repetitions),
-                correlation_levels=list(self.cfg.apd.correlation_levels),
+                correlation_levels=list(self.cfg.apd.get("correlation_levels", [])),
                 id_centers=list(dataset_cfg.id_centers),
                 ood_centers=list(dataset_cfg.ood_centers),
                 id_test_fraction=float(self.cfg.apd.id_test_fraction),
                 seed=int(self.cfg.seed),
+                mode=str(self.cfg.apd.get("mode", "paper")),
             )
+            # Save metadata for future runs
+            split_dir.mkdir(parents=True, exist_ok=True)
+            with open(metadata_file, "w") as f:
+                json.dump(current_params, f, indent=2)
 
         self._apd_split_cache[dataset_name] = splits
         return splits
@@ -178,7 +252,7 @@ class PathoROBPlugin(BenchmarkPlugin):
                     policy=str(self.cfg.ri.k_selection_policy),
                     fixed_k=fixed_k,
                     k_candidates=list(self.cfg.ri.k_candidates),
-                    max_pairs=(None if self.cfg.max_pairs <= 0 else int(self.cfg.max_pairs)),
+                    max_pairs=(None if self.cfg.get("max_pairs", 0) <= 0 else int(self.cfg.get("max_pairs", 0))),
                     random_state=int(self.cfg.seed) + epoch,
                 )
                 metric_rows.append(
@@ -271,7 +345,7 @@ class PathoROBPlugin(BenchmarkPlugin):
                     repeats=int(self.cfg.clustering.repeats),
                     k_min=int(self.cfg.clustering.k_min),
                     k_max=int(self.cfg.clustering.k_max),
-                    max_pairs=(None if self.cfg.max_pairs <= 0 else int(self.cfg.max_pairs)),
+                    max_pairs=(None if self.cfg.get("max_pairs", 0) <= 0 else int(self.cfg.get("max_pairs", 0))),
                     random_state=int(self.cfg.seed) + epoch,
                 )
                 metric_rows.append(

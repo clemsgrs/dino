@@ -57,6 +57,7 @@ def compute_apd(
     features: np.ndarray,
     all_splits: Sequence[pd.DataFrame],
     seed: int,
+    verbose: bool = False,
 ) -> APDResult:
     """Compute APD over generated split manifests for one dataset+model."""
     if len(all_splits) == 0:
@@ -105,10 +106,11 @@ def compute_apd(
         # Debug: log training set distribution per rho
         train_labels = split_df[split_df["partition"] == "train"]["label"].value_counts().to_dict()
         train_centers = split_df[split_df["partition"] == "train"]["medical_center"].value_counts().to_dict()
-        logger.info(
-            f"[APD] split={i}/{len(all_splits)} rep={rep} rho={rho:.2f}: "
-            f"train={len(x_train)} samples, labels={train_labels}, centers={train_centers}"
-        )
+        if verbose:
+            logger.info(
+                f"[APD] split={i}/{len(all_splits)} rep={rep} rho={rho:.2f}: "
+                f"train={len(x_train)} samples, labels={train_labels}, centers={train_centers}"
+            )
 
         clf = _train_linear_probe(x_train, y_train, seed + rep * 100 + split_id)
 
@@ -118,7 +120,8 @@ def compute_apd(
         acc_id = float(accuracy_score(y_id, pred_id))
         acc_ood = float(accuracy_score(y_ood, pred_ood))
 
-        logger.info(f"[APD] split={i}/{len(all_splits)} rep={rep} rho={rho:.2f}: acc_id={acc_id:.4f}, acc_ood={acc_ood:.4f}")
+        if verbose:
+            logger.info(f"[APD] split={i}/{len(all_splits)} rep={rep} rho={rho:.2f}: acc_id={acc_id:.4f}, acc_ood={acc_ood:.4f}")
 
         id_by_rep.setdefault(rep, {})[split_id] = acc_id
         ood_by_rep.setdefault(rep, {})[split_id] = acc_ood

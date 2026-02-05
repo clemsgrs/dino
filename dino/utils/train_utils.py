@@ -1,7 +1,6 @@
 import sys
 import math
 import tqdm
-import wandb
 import torch
 
 from pathlib import Path
@@ -30,7 +29,6 @@ def train_one_epoch(
     save_every,
     checkpoint_dir,
     gpu_id,
-    log_to_wandb: bool = False,
     domain_classifier=None,
     domain_loss_fn=None,
     grl=None,
@@ -172,22 +170,6 @@ def train_one_epoch(
                 metric_logger.update(loss_dino=loss_dino.item())
                 metric_logger.update(loss_domain=loss_domain.item())
                 metric_logger.update(lambda_adv=lambda_adv)
-
-            if log_to_wandb and distributed.is_main_process():
-                log_dict = {
-                    "train/iteration": iteration,
-                    "train/loss": loss.item(),
-                    "train/lr": optimizer.param_groups[0]["lr"],
-                    "train/wd": optimizer.param_groups[0]["weight_decay"],
-                }
-                # log gradient stats
-                for key, value in grad_stats.items():
-                    log_dict[f"grad/{key}"] = value
-                if domain_classifier is not None:
-                    log_dict["train/loss_dino"] = loss_dino.item()
-                    log_dict["train/loss_domain"] = loss_domain.item()
-                    log_dict["train/lambda_adv"] = lambda_adv
-                wandb.log(log_dict, step=iteration)
 
             # save checkpoint
             if distributed.is_main_process() and (iteration % save_every == 0):
