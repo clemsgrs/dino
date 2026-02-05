@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 import warnings
 
 import tqdm
@@ -12,6 +13,8 @@ from omegaconf import DictConfig
 from torchvision import transforms
 
 from dino.distributed import is_main_process, is_enabled_and_multiple_gpus
+
+logger = logging.getLogger("dino")
 from dino.eval.dataset import EvalDataset
 from dino.eval.features import extract_multiple_features
 from dino.eval.evaluators import KNNEvaluator, LinearEvaluator
@@ -44,7 +47,7 @@ class StandardProbePlugin(BenchmarkPlugin):
             ]
         )
 
-        print(f"[StandardProbe] Using transform key: {self.transform_key}")
+        logger.info(f"[StandardProbe] Using transform key: {self.transform_key}")
 
         self.evaluators = {}
         self.primary_benchmark = None

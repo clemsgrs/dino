@@ -6,6 +6,7 @@ import os
 import random
 import sys
 import time
+import logging
 from pathlib import Path
 
 import torch
@@ -41,6 +42,8 @@ from dino.utils import (
     setup,
     train_one_epoch,
 )
+
+logger = logging.getLogger("dino")
 
 
 def get_args_parser(add_help: bool = True):
@@ -81,7 +84,7 @@ def main(args):
 
     # preparing data
     if is_main_process():
-        print("Loading data...")
+        logger.info("Loading data...")
 
     transform = PatchDataAugmentationDINO(
         cfg.aug.global_crop_size,
@@ -103,17 +106,17 @@ def main(args):
     dataset_loading_end_time = time.time() - dataset_loading_start_time
     total_time_str = str(datetime.timedelta(seconds=int(dataset_loading_end_time)))
     if is_main_process():
-        print(f"Pretraining data loaded in {total_time_str} ({len(dataset)} patches)")
+        logger.info(f"Pretraining data loaded in {total_time_str} ({len(dataset)} patches)")
         if cfg.adversarial.enable:
-            print(f"Domain adversarial training enabled with {num_centers} centers: {dataset.centers}")
+            logger.info(f"Domain adversarial training enabled with {num_centers} centers: {dataset.centers}")
 
     if cfg.training.pct:
         nsample = int(cfg.training.pct * len(dataset))
         idxs = random.sample(range(len(dataset)), k=nsample)
         dataset = torch.utils.data.Subset(dataset, idxs)
         if is_main_process():
-            print(
-                f"Pretraining on {cfg.training.pct*100}% of the data: {len(dataset):,d} samples\n"
+            logger.info(
+                f"Pretraining on {cfg.training.pct*100}% of the data: {len(dataset):,d} samples"
             )
 
     if is_enabled_and_multiple_gpus():
@@ -131,11 +134,12 @@ def main(args):
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
+        persistent_workers=(num_workers > 0),
     )
 
     # building student and teacher networks
     if is_main_process():
-        print("Building student and teacher networks...")
+        logger.info("Building student and teacher networks...")
     student = vits.__dict__[cfg.model.arch](
         img_size=cfg.model.input_size,
         patch_size=cfg.model.patch_size,
@@ -237,7 +241,7 @@ def main(args):
         )
 
         if is_main_process():
-            print(f"Domain classifier initialized: {embed_dim} -> {num_centers} centers")
+            logger.info(f"Domain classifier initialized: {embed_dim} -> {num_centers} centers")
 
     params_groups = get_params_groups(student)
     # add domain classifier parameters to optimizer if enabled
@@ -276,7 +280,7 @@ def main(args):
         cfg.model.momentum_teacher, 1, cfg.training.nepochs, len(data_loader)
     )
     if is_main_process():
-        print("Models built, kicking off training")
+        logger.info("Models built, kicking off training")
 
     epochs_run = 0
 
@@ -284,7 +288,7 @@ def main(args):
     snapshot_path = Path(snapshot_dir, "latest.pt")
     if is_enabled_and_multiple_gpus() and snapshot_path.exists():
         if is_main_process():
-            print("Loading snapshot")
+            logger.info("Loading snapshot")
         snapshot = torch.load(snapshot_path, map_location=device)
         epochs_run = snapshot["epoch"]
         student.load_state_dict(snapshot["student"])
@@ -294,7 +298,7 @@ def main(args):
         if fp16_scaler is not None:
             fp16_scaler.load_state_dict(snapshot["fp16_scaler"])
         if is_main_process():
-            print(f"Resuming training from snapshot at epoch {epochs_run}")
+            logger.info(f"Resuming training from snapshot at epoch {epochs_run}")
 
     elif cfg.resume:
         ckpt_path = Path(cfg.resume_from_checkpoint)
@@ -308,7 +312,7 @@ def main(args):
             dino_loss=dino_loss,
         )
         if is_main_process():
-            print(f"Resuming training from checkpoint at epoch {epochs_run}")
+            logger.info(f"Resuming training from checkpoint at epoch {epochs_run}")
 
     early_stopping = EarlyStoppingDINO(
         cfg.early_stopping.tracking,
@@ -326,7 +330,7 @@ def main(args):
         tuning_dir = output_dir / "tuning"
         tuner = Tuner(cfg.tuning, device, output_dir=tuning_dir)
         if is_main_process():
-            print("Unified tuner initialized")
+            logger.info("Unified tuner initialized")
 
     freeze_last_layer_iter = int(cfg.training.freeze_last_layer_pct * total_iterations)
     save_every_iter = int(cfg.training.save_every_pct * total_iterations)
@@ -401,8 +405,7 @@ def main(args):
                 tune_results = tuner.tune(student, teacher, epoch)
                 if is_main_process():
                     if cfg.wandb.enable:
-                        for metric_name, value in tuner.get_log_metrics(tune_results).items():
-                            log_dict[f"tune/{metric_name}"] = value
+                        update_log_dict("tune", tuner.get_log_metrics(tune_results), log_dict, step="epoch")
                     else:
                         logger.info(f"Tuning results at epoch {epoch}:")
                         for metric_name, value in tuner.get_log_metrics(tune_results).items():
@@ -439,7 +442,7 @@ def main(args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     if is_main_process():
-        print("Pretraining time {}".format(total_time_str))
+        logger.info(f"Pretraining time {total_time_str}")
 
     if is_enabled_and_multiple_gpus():
         torch.distributed.destroy_process_group()

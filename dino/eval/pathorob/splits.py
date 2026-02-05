@@ -360,9 +360,12 @@ def generate_apd_splits(
                 f"{dataset_name}: some train pool class-center cells are empty; cannot build parity APD splits"
             )
 
-        base = int(avail.min())
+        # Use half of minimum cell capacity to leave room for biased redistribution.
+        # Without this, if all cells have equal capacity, max_assoc == uniform and
+        # we can't create biased splits.
+        base = int(avail.min()) // 2
         if base <= 0:
-            raise RuntimeError(f"{dataset_name}: base cell size is zero")
+            raise RuntimeError(f"{dataset_name}: base cell size is zero (need at least 2 samples per cell)")
 
         row_totals = np.full(len(labels), base * len(centers), dtype=int)
         col_totals = np.full(len(centers), base * len(labels), dtype=int)

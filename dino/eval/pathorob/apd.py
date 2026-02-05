@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Dict, List, Sequence, Tuple
 
@@ -7,6 +8,8 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
+
+logger = logging.getLogger("dino")
 
 
 @dataclass
@@ -66,7 +69,7 @@ def compute_apd(
     id_by_rho: Dict[float, List[float]] = {}
     ood_by_rho: Dict[float, List[float]] = {}
 
-    for split_df in all_splits:
+    for i, split_df in enumerate(all_splits):
         rep = int(split_df["rep"].iloc[0])
         split_id = int(split_df["split_id"].iloc[0])
         rho = float(split_df["correlation_level"].iloc[0])
@@ -99,6 +102,14 @@ def compute_apd(
         x_ood = features[feat_idx[ood_mask.to_numpy()]]
         y_ood = y[ood_mask.to_numpy()]
 
+        # Debug: log training set distribution per rho
+        train_labels = split_df[split_df["partition"] == "train"]["label"].value_counts().to_dict()
+        train_centers = split_df[split_df["partition"] == "train"]["medical_center"].value_counts().to_dict()
+        logger.info(
+            f"[APD] split={i}/{len(all_splits)} rep={rep} rho={rho:.2f}: "
+            f"train={len(x_train)} samples, labels={train_labels}, centers={train_centers}"
+        )
+
         clf = _train_linear_probe(x_train, y_train, seed + rep * 100 + split_id)
 
         pred_id = clf.predict(x_id)
@@ -106,6 +117,8 @@ def compute_apd(
 
         acc_id = float(accuracy_score(y_id, pred_id))
         acc_ood = float(accuracy_score(y_ood, pred_ood))
+
+        logger.info(f"[APD] split={i}/{len(all_splits)} rep={rep} rho={rho:.2f}: acc_id={acc_id:.4f}, acc_ood={acc_ood:.4f}")
 
         id_by_rep.setdefault(rep, {})[split_id] = acc_id
         ood_by_rep.setdefault(rep, {})[split_id] = acc_ood

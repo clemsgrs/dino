@@ -173,5 +173,6 @@ wandb:
   username: "clemsg"
   exp_name: "dino"
   tags: ["dino", "${model.arch}"]
-  dir: "/tmp/"
+  dir: "/home/user/"
   group:
+  resume_id:

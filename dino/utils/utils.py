@@ -1,3 +1,4 @@
+import logging
 import os
 import tqdm
 import wandb
@@ -10,6 +11,8 @@ import torch.nn as nn
 from typing import Optional
 from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
+
+logger = logging.getLogger("dino")
 
 
 def compute_time(start_time, end_time):
@@ -123,14 +126,14 @@ def start_from_checkpoint(ckpt_path, model):
     """
     if not Path(ckpt_path).is_file():
         return
-    print(f"Pretrained weights found at {ckpt_path}")
+    logger.info(f"Pretrained weights found at {ckpt_path}")
 
     # open checkpoint file
     checkpoint = torch.load(ckpt_path, map_location="cpu")
     state_dict = checkpoint["teacher"]
     state_dict, msg = update_state_dict(model.state_dict(), state_dict)
     model.load_state_dict(state_dict, strict=False)
-    print(msg)
+    logger.info(msg)
 
 
 def resume_from_checkpoint(ckpt_path, verbose: bool = True, **kwargs):
@@ -140,7 +143,7 @@ def resume_from_checkpoint(ckpt_path, verbose: bool = True, **kwargs):
     if not Path(ckpt_path).is_file():
         return 0
     if verbose:
-        print(f"Found checkpoint at {ckpt_path}")
+        logger.info(f"Found checkpoint at {ckpt_path}")
 
     # open checkpoint file
     checkpoint = torch.load(ckpt_path, map_location="cpu")
@@ -156,7 +159,7 @@ def resume_from_checkpoint(ckpt_path, verbose: bool = True, **kwargs):
                 nn.modules.utils.consume_prefix_in_state_dict_if_present(sd, "module.")
                 msg = value.load_state_dict(sd, strict=False)
                 if verbose:
-                    print(
+                    logger.info(
                         f"=> loaded '{key}' from checkpoint: '{ckpt_path}' with msg {msg}"
                     )
             except TypeError:
@@ -167,14 +170,14 @@ def resume_from_checkpoint(ckpt_path, verbose: bool = True, **kwargs):
                     )
                     msg = value.load_state_dict(sd)
                     if verbose:
-                        print(f"=> loaded '{key}' from checkpoint: '{ckpt_path}'")
+                        logger.info(f"=> loaded '{key}' from checkpoint: '{ckpt_path}'")
                 except ValueError:
                     if verbose:
-                        print(
+                        logger.warning(
                             f"=> failed to load '{key}' from checkpoint: '{ckpt_path}'"
                         )
         elif verbose:
-            print(f"=> key '{key}' not found in checkpoint: '{ckpt_path}'")
+            logger.warning(f"=> key '{key}' not found in checkpoint: '{ckpt_path}'")
     return epoch
 
 
