@@ -129,8 +129,8 @@ class TestPathoROBPaperModeValidation(unittest.TestCase):
         # Should not raise
         plugin._validate_paper_mode_centers("camelyon", dataset_cfg)
 
-    def test_interpolate_mode_allows_any_centers(self):
-        """Interpolate mode should allow any centers."""
+    def test_custom_mode_allows_any_centers(self):
+        """Custom mode should allow any centers."""
         cfg = OmegaConf.create({
             "tune_every": 1,
             "seed": 42,
@@ -140,7 +140,7 @@ class TestPathoROBPaperModeValidation(unittest.TestCase):
             "ri": {"enable": False},
             "apd": {
                 "enable": True,
-                "mode": "interpolate",
+                "mode": "custom",
                 "repetitions": 1,
                 "id_test_fraction": 0.2,
                 "correlation_levels": [0.0, 0.5, 1.0],

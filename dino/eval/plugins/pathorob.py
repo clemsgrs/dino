@@ -131,10 +131,10 @@ class PathoROBPlugin(BenchmarkPlugin):
             "mode": str(self.cfg.apd.get("mode", "paper")),
             "id_centers": sorted(list(dataset_cfg.id_centers)),
             "ood_centers": sorted(list(dataset_cfg.ood_centers)),
-            # Only include correlation_levels if mode is interpolate
+            # Only include correlation_levels if mode is custom
             "correlation_levels": (
                 sorted(list(self.cfg.apd.correlation_levels))
-                if self.cfg.apd.get("mode", "paper") == "interpolate"
+                if self.cfg.apd.get("mode", "paper") == "custom"
                 else None
             ),
         }
@@ -157,12 +157,12 @@ class PathoROBPlugin(BenchmarkPlugin):
         if config_id != sorted(paper_id):
             raise ValueError(
                 f"[APD] Paper mode requires id_centers={paper_id} for {dataset_name}, "
-                f"but config has {config_id}. Use mode='interpolate' for custom centers."
+                f"but config has {config_id}. Use mode='custom' for custom centers."
             )
         if config_ood != sorted(paper_ood):
             raise ValueError(
                 f"[APD] Paper mode requires ood_centers={paper_ood} for {dataset_name}, "
-                f"but config has {config_ood}. Use mode='interpolate' for custom centers."
+                f"but config has {config_ood}. Use mode='custom' for custom centers."
             )
 
     def _ensure_apd_splits(self, dataset_name: str, dataset_cfg: DictConfig, manifest_df: pd.DataFrame) -> List[pd.DataFrame]:

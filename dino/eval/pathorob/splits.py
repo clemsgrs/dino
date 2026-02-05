@@ -324,7 +324,7 @@ def generate_apd_splits(
     ood_centers: Sequence[str],
     id_test_fraction: float,
     seed: int,
-    mode: Literal["interpolate", "paper"] = "paper",
+    mode: Literal["custom", "paper"] = "paper",
 ) -> List[pd.DataFrame]:
     """Generate and persist APD splits with fixed class/center margins across rho levels.
 
@@ -340,7 +340,7 @@ def generate_apd_splits(
         seed: Random seed for reproducibility
         mode: Split generation mode:
             - "paper": Use exact allocation matrices from the PathoROB paper (default)
-            - "interpolate": Interpolate between uniform and max-association matrices
+            - "custom": Use custom correlation levels and centers
 
     Returns:
         List of DataFrames, one per (rep, correlation_level) combination
@@ -368,8 +368,8 @@ def generate_apd_splits(
             correlation_levels = paper_v_levels
             logger.info(f"[APD] Using paper allocations for {dataset_name} with V levels: {paper_v_levels}")
         except ValueError as e:
-            logger.warning(f"[APD] Paper allocations not available for {dataset_name}: {e}. Falling back to interpolate mode.")
-            mode = "interpolate"
+            logger.warning(f"[APD] Paper allocations not available for {dataset_name}: {e}. Falling back to custom mode.")
+            mode = "custom"
 
     all_splits: List[pd.DataFrame] = []
 

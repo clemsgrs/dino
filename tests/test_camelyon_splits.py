@@ -589,8 +589,8 @@ class TestPaperModeGeneration(unittest.TestCase):
                     msg=f"Target V={v_target}, realized V={v_realized}"
                 )
 
-    def test_interpolate_mode_still_works(self):
-        """Default interpolate mode should still work after adding paper mode."""
+    def test_custom_mode_still_works(self):
+        """Custom mode should still work after adding paper mode."""
         with tempfile.TemporaryDirectory() as tmpdir:
             splits = generate_apd_splits(
                 df=self.df,
@@ -602,7 +602,7 @@ class TestPaperModeGeneration(unittest.TestCase):
                 ood_centers=self.ood_centers,
                 id_test_fraction=0.2,
                 seed=42,
-                mode="interpolate",
+                mode="custom",
             )
 
             # Should have 3 splits (as specified)

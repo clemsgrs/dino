@@ -79,8 +79,8 @@ tuning:
       transforms:
         resize: 256
         crop_size: 224
-      num_workers: 4
-      batch_size_per_gpu: 64
+      num_workers: 16
+      batch_size_per_gpu: 32
       benchmarks:
         - name: "benchmark_a"
           csv_path: "/path/to/benchmark.csv"
@@ -94,7 +94,7 @@ tuning:
           linear: {epochs: 100, lr: 0.01, batch_size: 256}
     - type: "pathorob"
       enable: true
-      tune_every: 5
+      tune_every: 1
       seed: 42
       transforms:
         resize: 256
@@ -110,10 +110,10 @@ tuning:
         k_candidates: [3, 5, 7, 10, 15]
       apd:
         enable: true
-        mode: "paper"  # "paper" uses exact allocations from PathoROB paper, "interpolate" for custom V levels
+        mode: "paper"  # "paper" uses exact allocations from PathoROB paper, "custom" for custom V levels
         repetitions: 3
         id_test_fraction: 0.2
-        correlation_levels: [0.0, 0.25, 0.5, 0.75, 1.0]  # only used when mode="interpolate"
+        correlation_levels: [0.0, 0.25, 0.5, 0.75, 1.0]  # only used when mode="custom"
       clustering:
         enable: true
         repeats: 5
