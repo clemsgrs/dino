@@ -252,7 +252,7 @@ class PathoROBPlugin(BenchmarkPlugin):
                     policy=str(self.cfg.ri.k_selection_policy),
                     fixed_k=fixed_k,
                     k_candidates=list(self.cfg.ri.k_candidates),
-                    max_pairs=(None if self.cfg.max_pairs <= 0 else int(self.cfg.max_pairs)),
+                    max_pairs=(None if self.cfg.get("max_pairs", 0) <= 0 else int(self.cfg.get("max_pairs", 0))),
                     random_state=int(self.cfg.seed) + epoch,
                 )
                 metric_rows.append(
@@ -345,7 +345,7 @@ class PathoROBPlugin(BenchmarkPlugin):
                     repeats=int(self.cfg.clustering.repeats),
                     k_min=int(self.cfg.clustering.k_min),
                     k_max=int(self.cfg.clustering.k_max),
-                    max_pairs=(None if self.cfg.max_pairs <= 0 else int(self.cfg.max_pairs)),
+                    max_pairs=(None if self.cfg.get("max_pairs", 0) <= 0 else int(self.cfg.get("max_pairs", 0))),
                     random_state=int(self.cfg.seed) + epoch,
                 )
                 metric_rows.append(
