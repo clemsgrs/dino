@@ -58,7 +58,7 @@ class PathoROBPlugin(BenchmarkPlugin):
             f"resize={cfg.transforms.resize}|crop={cfg.transforms.crop_size}|"
             "norm=imagenet"
         )
-        logging.info(f"[PathoROB] Using transform key: {self.transform_key}")
+        logging.info(f"[PathoROB] Using transforms: {self.transform_key}")
 
         self._manifest_cache: Dict[str, pd.DataFrame] = {}
         self._apd_split_cache: Dict[str, List[pd.DataFrame]] = {}
@@ -121,13 +121,52 @@ class PathoROBPlugin(BenchmarkPlugin):
             out[model_name] = arr / norms
         return out
 
+    def _get_split_params(self, dataset_cfg: DictConfig) -> Dict[str, Any]:
+        """Get current split generation parameters as a dict for comparison."""
+        return {
+            "repetitions": int(self.cfg.apd.repetitions),
+            "id_test_fraction": float(self.cfg.apd.id_test_fraction),
+            "seed": int(self.cfg.seed),
+            "mode": str(self.cfg.apd.get("mode", "paper")),
+            "id_centers": sorted(list(dataset_cfg.id_centers)),
+            "ood_centers": sorted(list(dataset_cfg.ood_centers)),
+            # Only include correlation_levels if mode is interpolate
+            "correlation_levels": (
+                sorted(list(self.cfg.apd.correlation_levels))
+                if self.cfg.apd.get("mode", "paper") == "interpolate"
+                else None
+            ),
+        }
+
     def _ensure_apd_splits(self, dataset_name: str, dataset_cfg: DictConfig, manifest_df: pd.DataFrame) -> List[pd.DataFrame]:
         if dataset_name in self._apd_split_cache:
             return self._apd_split_cache[dataset_name]
 
-        split_files = sorted((self.splits_dir / dataset_name).glob("rep_*/split_*.csv"))
+        split_dir = self.splits_dir / dataset_name
+        metadata_file = split_dir / "split_params.json"
+        split_files = sorted(split_dir.glob("rep_*/split_*.csv"))
+
+        current_params = self._get_split_params(dataset_cfg)
+        need_regenerate = True
+
+        if split_files and metadata_file.exists():
+            try:
+                with open(metadata_file) as f:
+                    saved_params = json.load(f)
+                if saved_params == current_params:
+                    need_regenerate = False
+                    logger.info(f"[APD] Loading existing splits for {dataset_name} (params match)")
+                else:
+                    logger.info(f"[APD] Regenerating splits for {dataset_name} (params changed)")
+                    logger.debug(f"[APD] Old params: {saved_params}")
+                    logger.debug(f"[APD] New params: {current_params}")
+            except (json.JSONDecodeError, KeyError):
+                logger.warning(f"[APD] Could not read split metadata, regenerating splits")
+        elif split_files:
+            logger.warning(f"[APD] Found splits but no metadata file, regenerating to ensure consistency")
+
         splits: List[pd.DataFrame] = []
-        if split_files:
+        if not need_regenerate:
             for p in split_files:
                 splits.append(pd.read_csv(p))
         else:
@@ -136,12 +175,17 @@ class PathoROBPlugin(BenchmarkPlugin):
                 output_dir=self.splits_dir,
                 dataset_name=dataset_name,
                 repetitions=int(self.cfg.apd.repetitions),
-                correlation_levels=list(self.cfg.apd.correlation_levels),
+                correlation_levels=list(self.cfg.apd.get("correlation_levels", [])),
                 id_centers=list(dataset_cfg.id_centers),
                 ood_centers=list(dataset_cfg.ood_centers),
                 id_test_fraction=float(self.cfg.apd.id_test_fraction),
                 seed=int(self.cfg.seed),
+                mode=str(self.cfg.apd.get("mode", "paper")),
             )
+            # Save metadata for future runs
+            split_dir.mkdir(parents=True, exist_ok=True)
+            with open(metadata_file, "w") as f:
+                json.dump(current_params, f, indent=2)
 
         self._apd_split_cache[dataset_name] = splits
         return splits

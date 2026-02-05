@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Literal, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
+from dino.eval.pathorob.allocations import (
+    get_paper_allocations,
+    get_paper_v_levels,
+    scale_allocation,
+)
+
+logger = logging.getLogger("dino")
 
 EPS = 1e-12
 
@@ -316,8 +324,27 @@ def generate_apd_splits(
     ood_centers: Sequence[str],
     id_test_fraction: float,
     seed: int,
+    mode: Literal["interpolate", "paper"] = "paper",
 ) -> List[pd.DataFrame]:
-    """Generate and persist APD splits with fixed class/center margins across rho levels."""
+    """Generate and persist APD splits with fixed class/center margins across rho levels.
+
+    Args:
+        df: DataFrame with columns [sample_id, image_path, label, medical_center, slide_id]
+        output_dir: Directory to save split CSVs
+        dataset_name: Name of dataset (used for paper mode lookup and output paths)
+        repetitions: Number of random repetitions
+        correlation_levels: List of target Cramér's V values (ignored if mode="paper")
+        id_centers: In-distribution medical centers for training
+        ood_centers: Out-of-distribution medical centers for OOD test
+        id_test_fraction: Fraction of ID slides to hold out for ID test
+        seed: Random seed for reproducibility
+        mode: Split generation mode:
+            - "paper": Use exact allocation matrices from the PathoROB paper (default)
+            - "interpolate": Interpolate between uniform and max-association matrices
+
+    Returns:
+        List of DataFrames, one per (rep, correlation_level) combination
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
     labels = sorted(df["label"].unique().tolist())
@@ -330,6 +357,19 @@ def generate_apd_splits(
 
     if len(ood_df) == 0:
         raise ValueError(f"{dataset_name}: OOD set is empty")
+
+    # Paper mode: use exact paper allocations and V levels
+    paper_allocations = None
+    if mode == "paper":
+        try:
+            paper_allocations = get_paper_allocations(dataset_name)
+            paper_v_levels = get_paper_v_levels(dataset_name)
+            # Override correlation_levels with paper values
+            correlation_levels = paper_v_levels
+            logger.info(f"[APD] Using paper allocations for {dataset_name} with V levels: {paper_v_levels}")
+        except ValueError as e:
+            logger.warning(f"[APD] Paper allocations not available for {dataset_name}: {e}. Falling back to interpolate mode.")
+            mode = "interpolate"
 
     all_splits: List[pd.DataFrame] = []
 
@@ -360,35 +400,107 @@ def generate_apd_splits(
                 f"{dataset_name}: some train pool class-center cells are empty; cannot build parity APD splits"
             )
 
-        # Use half of minimum cell capacity to leave room for biased redistribution.
-        # Without this, if all cells have equal capacity, max_assoc == uniform and
-        # we can't create biased splits.
-        base = int(avail.min()) // 2
-        if base <= 0:
-            raise RuntimeError(f"{dataset_name}: base cell size is zero (need at least 2 samples per cell)")
+        # Compute base allocations depending on mode
+        if mode == "paper" and paper_allocations is not None:
+            # Scale paper allocations to available data
+            # Use minimum available cell to determine scale factor
+            paper_base = paper_allocations[0.0]  # Use V=0 as reference
+            paper_total = int(paper_base.sum())
 
-        row_totals = np.full(len(labels), base * len(centers), dtype=int)
-        col_totals = np.full(len(centers), base * len(labels), dtype=int)
-        uniform = np.full((len(labels), len(centers)), base, dtype=int)
+            # Find maximum training size we can use (limited by smallest cell ratio)
+            scale_factors = avail / np.maximum(paper_base, 1)
+            scale_factors[paper_base == 0] = np.inf  # Don't limit by zero cells
+            max_scale = float(scale_factors.min())
 
-        preferred_cols = np.array([i % len(centers) for i in range(len(labels))], dtype=int)
-        max_assoc = _build_max_assoc_matrix(
-            row_totals=row_totals,
-            col_totals=col_totals,
-            preferred_cols=preferred_cols,
-            capacities=avail,
-        )
+            # Target training size: scale paper total, but cap at available
+            target_train_total = min(int(paper_total * max_scale), int(avail.sum()))
+
+            # For V=1.0, some cells are zero - ensure we have enough in diagonal cells
+            v1_alloc = paper_allocations[1.0]
+            for i in range(v1_alloc.shape[0]):
+                for j in range(v1_alloc.shape[1]):
+                    if v1_alloc[i, j] > 0:
+                        # This cell needs capacity for V=1
+                        needed_ratio = v1_alloc[i, j] / paper_total
+                        needed = int(needed_ratio * target_train_total)
+                        if avail[i, j] < needed:
+                            # Reduce target to fit
+                            target_train_total = int(avail[i, j] / needed_ratio)
+
+            logger.info(f"[APD] Paper mode: scaling from {paper_total} to {target_train_total} training samples")
+        else:
+            # Interpolate mode: use half of minimum cell capacity
+            base = int(avail.min()) // 2
+            if base <= 0:
+                raise RuntimeError(f"{dataset_name}: base cell size is zero (need at least 2 samples per cell)")
+            target_train_total = base * len(labels) * len(centers)
+
+        # Precompute allocation matrices for each correlation level
+        allocation_matrices = {}
+        for rho in correlation_levels:
+            rho = float(rho)
+            rho = min(max(rho, 0.0), 1.0)
+
+            if mode == "paper" and paper_allocations is not None:
+                # Scale paper allocation to target size
+                if rho in paper_allocations:
+                    paper_alloc = paper_allocations[rho]
+                else:
+                    # Interpolate between nearest paper levels
+                    v_levels = sorted(paper_allocations.keys())
+                    v_lo = max(v for v in v_levels if v <= rho)
+                    v_hi = min(v for v in v_levels if v >= rho)
+                    if v_lo == v_hi:
+                        paper_alloc = paper_allocations[v_lo]
+                    else:
+                        t = (rho - v_lo) / (v_hi - v_lo)
+                        paper_alloc = ((1 - t) * paper_allocations[v_lo] + t * paper_allocations[v_hi])
+
+                split_matrix = scale_allocation(paper_alloc, target_train_total)
+
+                # Verify we have capacity
+                if (split_matrix > avail).any():
+                    # Reduce cells that exceed capacity
+                    excess = np.maximum(split_matrix - avail, 0)
+                    split_matrix = split_matrix - excess
+                    # Redistribute excess to other cells if possible
+                    deficit = int(excess.sum())
+                    if deficit > 0:
+                        slack = avail - split_matrix
+                        for _ in range(deficit):
+                            if slack.max() <= 0:
+                                break
+                            idx = np.unravel_index(np.argmax(slack), slack.shape)
+                            split_matrix[idx] += 1
+                            slack[idx] -= 1
+            else:
+                # Interpolate mode
+                base = target_train_total // (len(labels) * len(centers))
+                row_totals = np.full(len(labels), base * len(centers), dtype=int)
+                col_totals = np.full(len(centers), base * len(labels), dtype=int)
+                uniform = np.full((len(labels), len(centers)), base, dtype=int)
+
+                preferred_cols = np.array([i % len(centers) for i in range(len(labels))], dtype=int)
+                max_assoc = _build_max_assoc_matrix(
+                    row_totals=row_totals,
+                    col_totals=col_totals,
+                    preferred_cols=preferred_cols,
+                    capacities=avail,
+                )
+
+                target = (1.0 - rho) * uniform.astype(float) + rho * max_assoc.astype(float)
+                split_matrix = _project_to_margins(
+                    target=target,
+                    row_totals=row_totals,
+                    col_totals=col_totals,
+                    capacities=avail,
+                )
+
+            allocation_matrices[rho] = split_matrix
 
         for split_idx, rho in enumerate(correlation_levels):
             rho = float(rho)
-            rho = min(max(rho, 0.0), 1.0)
-            target = (1.0 - rho) * uniform.astype(float) + rho * max_assoc.astype(float)
-            split_matrix = _project_to_margins(
-                target=target,
-                row_totals=row_totals,
-                col_totals=col_totals,
-                capacities=avail,
-            )
+            split_matrix = allocation_matrices[rho]
 
             train_df = _sample_from_matrix(train_pool, labels, centers, split_matrix, rep_rng)
 
