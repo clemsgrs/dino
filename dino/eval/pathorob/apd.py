@@ -106,10 +106,11 @@ def compute_apd(
         # Debug: log training set distribution per rho
         train_labels = split_df[split_df["partition"] == "train"]["label"].value_counts().to_dict()
         train_centers = split_df[split_df["partition"] == "train"]["medical_center"].value_counts().to_dict()
-        logger.info(
-            f"[APD] split={i}/{len(all_splits)} rep={rep} rho={rho:.2f}: "
-            f"train={len(x_train)} samples, labels={train_labels}, centers={train_centers}"
-        )
+        if verbose:
+            logger.info(
+                f"[APD] split={i}/{len(all_splits)} rep={rep} rho={rho:.2f}: "
+                f"train={len(x_train)} samples, labels={train_labels}, centers={train_centers}"
+            )
 
         clf = _train_linear_probe(x_train, y_train, seed + rep * 100 + split_id)
 

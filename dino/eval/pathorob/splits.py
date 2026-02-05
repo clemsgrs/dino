@@ -427,7 +427,10 @@ def generate_apd_splits(
                             # Reduce target to fit
                             target_train_total = int(avail[i, j] / needed_ratio)
 
-            logger.info(f"[APD] Paper mode: scaling from {paper_total} to {target_train_total} training samples")
+            if target_train_total < paper_total:
+                logger.warning(f"[APD] Paper mode: insufficient data, scaling from {paper_total} to {target_train_total} training samples")
+            else:
+                logger.info(f"[APD] Paper mode: using {target_train_total} training samples")
         else:
             # Interpolate mode: use half of minimum cell capacity
             base = int(avail.min()) // 2
