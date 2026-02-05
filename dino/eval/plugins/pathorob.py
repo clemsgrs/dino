@@ -382,6 +382,7 @@ class PathoROBPlugin(BenchmarkPlugin):
                 "skipping workspace creation. Install with: "
                 "pip install wandb-workspaces"
             )
+            self._workspace_created = True
             return
 
         try:
