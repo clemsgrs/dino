@@ -4,6 +4,8 @@ import os
 import sys
 from typing import Optional
 
+import tqdm
+
 import dino.distributed as distributed
 
 
@@ -49,7 +51,7 @@ def _configure_logger(
 
     # stdout logging for main worker only
     if distributed.is_main_process():
-        handler = logging.StreamHandler(stream=sys.stdout)
+        handler = TqdmLoggingHandler(stream=sys.stdout)
         handler.setLevel(logging.DEBUG)
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -73,6 +75,22 @@ def _configure_logger(
         logger.addHandler(handler)
 
     return logger
+
+
+class TqdmLoggingHandler(logging.StreamHandler):
+    """
+    Logging handler that routes messages through tqdm.write() to prevent
+    interference with progress bars. Falls back to standard stream output
+    when no tqdm progress bar is active.
+    """
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.tqdm.write(msg, file=self.stream)
+            self.flush()
+        except Exception:
+            self.handleError(record)
 
 
 def setup_logging(
