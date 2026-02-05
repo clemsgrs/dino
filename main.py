@@ -405,6 +405,8 @@ def main(args):
                 if is_main_process():
                     if cfg.wandb.enable:
                         update_log_dict("tune", tuner.get_log_metrics(tune_results), log_dict, step="epoch")
+                        for k, v in tuner.get_log_charts(tune_results).items():
+                            log_dict[f"tune/{k}"] = v
                     else:
                         logger.info(f"Tuning results at epoch {epoch}:")
                         for metric_name, value in tuner.get_log_metrics(tune_results).items():

@@ -394,6 +394,16 @@ class PathoROBPlugin(BenchmarkPlugin):
         except ImportError:
             return {}
 
+        try:
+            return self._build_panels_inner(wandb)
+        except Exception as exc:
+            logger.warning(
+                f"[PathoROB] Failed to build wandb panels: {exc}. "
+                "Scalar metrics are unaffected."
+            )
+            return {}
+
+    def _build_panels_inner(self, wandb) -> Dict[str, Any]:
         panels: Dict[str, Any] = {}
 
         # Discover datasets that have history entries
@@ -419,13 +429,22 @@ class PathoROBPlugin(BenchmarkPlugin):
             for metric_key, metric_label, y_label in comparison_metrics:
                 s_epochs, s_values = self._get_history(f"{dataset}/student/{metric_key}")
                 t_epochs, t_values = self._get_history(f"{dataset}/teacher/{metric_key}")
-                if not s_epochs and not t_epochs:
+                xs_list, ys_list, key_list = [], [], []
+                if s_epochs:
+                    xs_list.append(s_epochs)
+                    ys_list.append(s_values)
+                    key_list.append("student")
+                if t_epochs:
+                    xs_list.append(t_epochs)
+                    ys_list.append(t_values)
+                    key_list.append("teacher")
+                if not xs_list:
                     continue
                 panel_key = f"panels/{dataset}_{metric_key}"
                 panels[panel_key] = wandb.plot.line_series(
-                    xs=[s_epochs, t_epochs],
-                    ys=[s_values, t_values],
-                    keys=["student", "teacher"],
+                    xs=xs_list,
+                    ys=ys_list,
+                    keys=key_list,
                     title=f"{title_prefix} \u2014 {metric_label}",
                     xname="Epoch",
                 )
@@ -475,7 +494,7 @@ class PathoROBPlugin(BenchmarkPlugin):
         teacher_backbone.eval()
 
         all_rows: List[Dict[str, Any]] = []
-        all_logs: Dict[str, Any] = {}
+        all_logs: Dict[str, float] = {}
 
         # add an assert to make sure that at least one dataset is enabled
         any_enabled = any(
@@ -499,10 +518,10 @@ class PathoROBPlugin(BenchmarkPlugin):
             except Exception as exc:
                 err_file = self.metrics_dir / f"epoch_{epoch+1:04d}_{dataset_name}_error.txt"
                 err_file.write_text(traceback.format_exc())
-                logging.info(f"[PathoROB] {dataset_name} failed at epoch {epoch+1}: {exc}")
+                logger.error(f"[PathoROB] {dataset_name} failed at epoch {epoch+1}: {exc}")
 
         # Build wandb line_series panels from accumulated history
-        all_logs.update(self._build_wandb_panels())
+        all_charts = self._build_wandb_panels()
 
         if all_rows:
             df = pd.DataFrame(all_rows)
@@ -518,4 +537,9 @@ class PathoROBPlugin(BenchmarkPlugin):
             else:
                 df.to_csv(roll_path, index=False)
 
-        return PluginResult(name=self.name, payload={"rows": all_rows}, log_metrics=all_logs)
+        return PluginResult(
+            name=self.name,
+            payload={"rows": all_rows},
+            log_metrics=all_logs,
+            log_charts=all_charts,
+        )
