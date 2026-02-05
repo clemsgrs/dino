@@ -57,6 +57,7 @@ def compute_apd(
     features: np.ndarray,
     all_splits: Sequence[pd.DataFrame],
     seed: int,
+    verbose: bool = False,
 ) -> APDResult:
     """Compute APD over generated split manifests for one dataset+model."""
     if len(all_splits) == 0:
@@ -118,7 +119,8 @@ def compute_apd(
         acc_id = float(accuracy_score(y_id, pred_id))
         acc_ood = float(accuracy_score(y_ood, pred_ood))
 
-        logger.info(f"[APD] split={i}/{len(all_splits)} rep={rep} rho={rho:.2f}: acc_id={acc_id:.4f}, acc_ood={acc_ood:.4f}")
+        if verbose:
+            logger.info(f"[APD] split={i}/{len(all_splits)} rep={rep} rho={rho:.2f}: acc_id={acc_id:.4f}, acc_ood={acc_ood:.4f}")
 
         id_by_rep.setdefault(rep, {})[split_id] = acc_id
         ood_by_rep.setdefault(rep, {})[split_id] = acc_ood
