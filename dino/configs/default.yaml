@@ -101,57 +101,38 @@ tuning:
     #       linear: {epochs: 100, lr: 0.01, batch_size: 256}
     # - type: "pathorob"
     #   enable: true
-    #   tune_every: 1  # evaluate every 5 epochs to reduce overhead
-    #   seed: 0
-    #   max_pairs: 2  # limit pairs for fast debugging
+    #   tune_every: 5
+    #   seed: 42
+    #   max_pairs: 0  # max (2 classes × 2 centers) pairs for RI/clustering; 0 = no limit
     #   transforms:
     #     resize: 256
     #     crop_size: 224
     #   num_workers: 4
-    #   batch_size_per_gpu: 64
-    #   ri: # robustness index
+    #   batch_size_per_gpu: 32
+    #   ri:
     #     enable: true
-    #     k_selection_policy: "paper_median_fixed"  # or "knn_bacc"
-    #     default_k: 5  # small k for tiny dataset
+    #     k_selection_policy: "paper_median_fixed"
+    #     default_k: 5
     #     fixed_k:
-    #       camelyon_tiny: 5  # tiny dataset k
-    #     k_candidates: [3, 5, 7]  # small candidates for debugging
-    #   apd: # average performance drop
+    #       camelyon: 5
+    #     k_candidates: [3, 5, 7, 10, 15]
+    #   apd:
     #     enable: true
-    #     repetitions: 1  # minimal for tiny dataset debugging
-    #     id_test_fraction: 0.1  # small fraction to keep more training samples
-    #     correlation_levels: [0.0, 1.0]  # minimal for debugging
+    #     mode: "paper"  # "paper" uses exact allocations from PathoROB paper, "custom" for custom V levels
+    #     repetitions: 3
+    #     id_test_fraction: 0.2
+    #     correlation_levels: [0.0, 0.25, 0.5, 0.75, 1.0]  # only used when mode="custom"
     #   clustering:
     #     enable: true
-    #     repeats: 2  # minimal for debugging
+    #     repeats: 5
     #     k_min: 2
-    #     k_max: 5  # minimal for debugging
+    #     k_max: 10
     #   datasets:
-    #     camelyon_tiny:  # Using tiny dataset for debugging
+    #     camelyon:
     #       enable: true
-    #       manifest_csv: "/data/pathology/projects/clement/code/dino/data/pathorob_camelyon_tiny/benchmark.csv"
+    #       manifest_csv: "data/pathorob/camelyon/benchmark.csv"
     #       id_centers: ["RUMC", "UMCU"]
-    #       ood_centers: ["CWZ"]
-    #     tcga_2x2:
-    #       enable: false
-    #       manifest_csv: ""
-    #       id_centers: []
-    #       ood_centers: []
-    #     tcga_4x4:
-    #       enable: false
-    #       manifest_csv: ""
-    #       id_centers: []
-    #       ood_centers: []
-    #     tolkach_2x2:
-    #       enable: false
-    #       manifest_csv: ""
-    #       id_centers: ["WNS", "CHA"]
-    #       ood_centers: []
-    #     tolkach_esca:
-    #       enable: false
-    #       manifest_csv: ""
-    #       id_centers: ["WNS", "CHA", "UKK"]
-    #       ood_centers: ["TCGA"]
+    #       ood_centers: ["CWZ", "RST", "LPON"]
   plugins: []
 
 adversarial:
