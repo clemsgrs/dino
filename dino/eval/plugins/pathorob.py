@@ -63,6 +63,7 @@ class PathoROBPlugin(BenchmarkPlugin):
 
         self._manifest_cache: Dict[str, pd.DataFrame] = {}
         self._apd_split_cache: Dict[str, List[pd.DataFrame]] = {}
+        self._metric_history: Dict[str, List[Tuple[int, float]]] = {}
 
     def should_run(self, epoch: int) -> bool:
         return ((epoch + 1) % int(self.cfg.tune_every)) == 0
@@ -220,6 +221,10 @@ class PathoROBPlugin(BenchmarkPlugin):
         self._apd_split_cache[dataset_name] = splits
         return splits
 
+    def _record(self, key: str, epoch: int, value: float) -> None:
+        """Append a (epoch, value) pair to the metric history."""
+        self._metric_history.setdefault(key, []).append((epoch, value))
+
     def _run_dataset(
         self,
         dataset_name: str,
@@ -269,6 +274,7 @@ class PathoROBPlugin(BenchmarkPlugin):
                     }
                 )
                 log_metrics[f"{dataset_name}/{model_name}/ri"] = float(ri.value)
+                self._record(f"{dataset_name}/{model_name}/ri", epoch, float(ri.value))
 
             if bool(self.cfg.apd.enable):
                 split_frames = self._ensure_apd_splits(dataset_name, dataset_cfg, manifest_df)
@@ -328,13 +334,18 @@ class PathoROBPlugin(BenchmarkPlugin):
                 log_metrics[f"{dataset_name}/{model_name}/apd_id"] = float(apd.apd_id)
                 log_metrics[f"{dataset_name}/{model_name}/apd_ood"] = float(apd.apd_ood)
                 log_metrics[f"{dataset_name}/{model_name}/apd_avg"] = float(apd.apd_avg)
+                self._record(f"{dataset_name}/{model_name}/apd_id", epoch, float(apd.apd_id))
+                self._record(f"{dataset_name}/{model_name}/apd_ood", epoch, float(apd.apd_ood))
+                self._record(f"{dataset_name}/{model_name}/apd_avg", epoch, float(apd.apd_avg))
                 # Log per-rho accuracies for interpretability
                 for rho, (mean_acc, _) in apd.acc_id_by_rho.items():
                     rho_str = f"{rho:.2f}".replace(".", "_")
                     log_metrics[f"{dataset_name}/{model_name}/acc_id_rho{rho_str}"] = mean_acc
+                    self._record(f"{dataset_name}/{model_name}/acc_id/rho{rho_str}", epoch, mean_acc)
                 for rho, (mean_acc, _) in apd.acc_ood_by_rho.items():
                     rho_str = f"{rho:.2f}".replace(".", "_")
                     log_metrics[f"{dataset_name}/{model_name}/acc_ood_rho{rho_str}"] = mean_acc
+                    self._record(f"{dataset_name}/{model_name}/acc_ood/rho{rho_str}", epoch, mean_acc)
 
             if bool(self.cfg.clustering.enable):
                 cl = compute_clustering_score(
@@ -362,8 +373,96 @@ class PathoROBPlugin(BenchmarkPlugin):
                     }
                 )
                 log_metrics[f"{dataset_name}/{model_name}/clustering_score"] = float(cl.score)
+                self._record(f"{dataset_name}/{model_name}/clustering_score", epoch, float(cl.score))
 
         return metric_rows, log_metrics
+
+    def _get_history(self, key: str) -> Tuple[List[int], List[float]]:
+        """Return sorted (epochs, values) lists for a history key."""
+        pairs = self._metric_history.get(key, [])
+        pairs_sorted = sorted(pairs, key=lambda p: p[0])
+        epochs = [p[0] for p in pairs_sorted]
+        values = [p[1] for p in pairs_sorted]
+        return epochs, values
+
+    def _build_wandb_panels(self) -> Dict[str, Any]:
+        """Build wandb.plot.line_series panels from accumulated metric history."""
+        try:
+            import wandb
+            if wandb.run is None:
+                return {}
+        except ImportError:
+            return {}
+
+        panels: Dict[str, Any] = {}
+
+        # Discover datasets that have history entries
+        datasets = set()
+        for key in self._metric_history:
+            # Keys are like "camelyon/student/ri"
+            parts = key.split("/")
+            if len(parts) >= 3:
+                datasets.add(parts[0])
+
+        for dataset in sorted(datasets):
+            title_prefix = dataset.capitalize()
+
+            # --- Group 1: Student vs Teacher comparison panels ---
+            comparison_metrics = [
+                ("ri", "Robustness Index (RI)", "RI"),
+                ("apd_id", "APD (In-Distribution)", "APD"),
+                ("apd_ood", "APD (Out-of-Distribution)", "APD"),
+                ("apd_avg", "APD (Average)", "APD"),
+                ("clustering_score", "Clustering Score", "Score"),
+            ]
+
+            for metric_key, metric_label, y_label in comparison_metrics:
+                s_epochs, s_values = self._get_history(f"{dataset}/student/{metric_key}")
+                t_epochs, t_values = self._get_history(f"{dataset}/teacher/{metric_key}")
+                if not s_epochs and not t_epochs:
+                    continue
+                panel_key = f"panels/{dataset}_{metric_key}"
+                panels[panel_key] = wandb.plot.line_series(
+                    xs=[s_epochs, t_epochs],
+                    ys=[s_values, t_values],
+                    keys=["student", "teacher"],
+                    title=f"{title_prefix} \u2014 {metric_label}",
+                    xname="Epoch",
+                )
+
+            # --- Group 2: Per-rho accuracy curves ---
+            for model_name in ["student", "teacher"]:
+                for eval_type, eval_label in [("acc_id", "ID"), ("acc_ood", "OOD")]:
+                    # Find all rho keys for this dataset/model/eval_type
+                    prefix = f"{dataset}/{model_name}/{eval_type}/rho"
+                    rho_keys = sorted(
+                        [k for k in self._metric_history if k.startswith(prefix)]
+                    )
+                    if not rho_keys:
+                        continue
+
+                    xs_list = []
+                    ys_list = []
+                    legend_keys = []
+                    for rho_key in rho_keys:
+                        # Extract rho value: "camelyon/student/acc_id/rho0_14" -> "0_14" -> "0.14"
+                        rho_suffix = rho_key[len(prefix):]
+                        rho_display = f"\u03c1={rho_suffix.replace('_', '.')}"
+                        epochs, values = self._get_history(rho_key)
+                        xs_list.append(epochs)
+                        ys_list.append(values)
+                        legend_keys.append(rho_display)
+
+                    panel_key = f"panels/{dataset}_{eval_type}_{model_name}"
+                    panels[panel_key] = wandb.plot.line_series(
+                        xs=xs_list,
+                        ys=ys_list,
+                        keys=legend_keys,
+                        title=f"{title_prefix} \u2014 {model_name.capitalize()} Accuracy ({eval_label}) by \u03c1",
+                        xname="Epoch",
+                    )
+
+        return panels
 
     @torch.no_grad()
     def run(self, student: nn.Module, teacher: nn.Module, epoch: int) -> PluginResult:
@@ -376,7 +475,7 @@ class PathoROBPlugin(BenchmarkPlugin):
         teacher_backbone.eval()
 
         all_rows: List[Dict[str, Any]] = []
-        all_logs: Dict[str, float] = {}
+        all_logs: Dict[str, Any] = {}
 
         # add an assert to make sure that at least one dataset is enabled
         any_enabled = any(
@@ -401,6 +500,9 @@ class PathoROBPlugin(BenchmarkPlugin):
                 err_file = self.metrics_dir / f"epoch_{epoch+1:04d}_{dataset_name}_error.txt"
                 err_file.write_text(traceback.format_exc())
                 logging.info(f"[PathoROB] {dataset_name} failed at epoch {epoch+1}: {exc}")
+
+        # Build wandb line_series panels from accumulated history
+        all_logs.update(self._build_wandb_panels())
 
         if all_rows:
             df = pd.DataFrame(all_rows)

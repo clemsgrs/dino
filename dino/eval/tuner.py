@@ -90,7 +90,10 @@ class Tuner:
             out["plugins"][plugin.name] = result.payload
 
             for k, v in result.log_metrics.items():
-                out["log_metrics"][f"{plugin.name}/{k}"] = float(v)
+                if isinstance(v, (int, float)):
+                    out["log_metrics"][f"{plugin.name}/{k}"] = float(v)
+                else:
+                    out["log_metrics"][f"{plugin.name}/{k}"] = v
 
             if out["primary"] is None and result.primary is not None:
                 out["primary"] = result.primary
@@ -107,7 +110,7 @@ class Tuner:
     ) -> Optional[Dict[str, Dict[str, float]]]:
         return results.get("primary")
 
-    def get_log_metrics(self, results: Dict[str, Any]) -> Dict[str, float]:
+    def get_log_metrics(self, results: Dict[str, Any]) -> Dict[str, Any]:
         return results.get("log_metrics", {})
 
     def _persist_unified_metrics(self, results: Dict[str, Any], epoch: int) -> None:
