@@ -4,7 +4,6 @@ import json
 import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-import warnings
 import logging
 
 import numpy as np
@@ -63,7 +62,7 @@ class PathoROBPlugin(BenchmarkPlugin):
 
         self._manifest_cache: Dict[str, pd.DataFrame] = {}
         self._apd_split_cache: Dict[str, List[pd.DataFrame]] = {}
-        self._metric_history: Dict[str, List[Tuple[int, float]]] = {}
+        self._workspace_created: bool = False
 
     def should_run(self, epoch: int) -> bool:
         return ((epoch + 1) % int(self.cfg.tune_every)) == 0
@@ -221,10 +220,6 @@ class PathoROBPlugin(BenchmarkPlugin):
         self._apd_split_cache[dataset_name] = splits
         return splits
 
-    def _record(self, key: str, epoch: int, value: float) -> None:
-        """Append a (epoch, value) pair to the metric history."""
-        self._metric_history.setdefault(key, []).append((epoch, value))
-
     def _run_dataset(
         self,
         dataset_name: str,
@@ -274,7 +269,6 @@ class PathoROBPlugin(BenchmarkPlugin):
                     }
                 )
                 log_metrics[f"{dataset_name}/{model_name}/ri"] = float(ri.value)
-                self._record(f"{dataset_name}/{model_name}/ri", epoch, float(ri.value))
 
             if bool(self.cfg.apd.enable):
                 split_frames = self._ensure_apd_splits(dataset_name, dataset_cfg, manifest_df)
@@ -334,18 +328,13 @@ class PathoROBPlugin(BenchmarkPlugin):
                 log_metrics[f"{dataset_name}/{model_name}/apd_id"] = float(apd.apd_id)
                 log_metrics[f"{dataset_name}/{model_name}/apd_ood"] = float(apd.apd_ood)
                 log_metrics[f"{dataset_name}/{model_name}/apd_avg"] = float(apd.apd_avg)
-                self._record(f"{dataset_name}/{model_name}/apd_id", epoch, float(apd.apd_id))
-                self._record(f"{dataset_name}/{model_name}/apd_ood", epoch, float(apd.apd_ood))
-                self._record(f"{dataset_name}/{model_name}/apd_avg", epoch, float(apd.apd_avg))
                 # Log per-rho accuracies for interpretability
                 for rho, (mean_acc, _) in apd.acc_id_by_rho.items():
                     rho_str = f"{rho:.2f}".replace(".", "_")
                     log_metrics[f"{dataset_name}/{model_name}/acc_id_rho{rho_str}"] = mean_acc
-                    self._record(f"{dataset_name}/{model_name}/acc_id/rho{rho_str}", epoch, mean_acc)
                 for rho, (mean_acc, _) in apd.acc_ood_by_rho.items():
                     rho_str = f"{rho:.2f}".replace(".", "_")
                     log_metrics[f"{dataset_name}/{model_name}/acc_ood_rho{rho_str}"] = mean_acc
-                    self._record(f"{dataset_name}/{model_name}/acc_ood/rho{rho_str}", epoch, mean_acc)
 
             if bool(self.cfg.clustering.enable):
                 cl = compute_clustering_score(
@@ -373,115 +362,122 @@ class PathoROBPlugin(BenchmarkPlugin):
                     }
                 )
                 log_metrics[f"{dataset_name}/{model_name}/clustering_score"] = float(cl.score)
-                self._record(f"{dataset_name}/{model_name}/clustering_score", epoch, float(cl.score))
 
         return metric_rows, log_metrics
 
-    def _get_history(self, key: str) -> Tuple[List[int], List[float]]:
-        """Return sorted (epochs, values) lists for a history key."""
-        pairs = self._metric_history.get(key, [])
-        pairs_sorted = sorted(pairs, key=lambda p: p[0])
-        epochs = [p[0] for p in pairs_sorted]
-        values = [p[1] for p in pairs_sorted]
-        return epochs, values
+    def _setup_wandb_workspace(self, metric_keys: List[str]) -> None:
+        """Create a wandb workspace with native LinePlot panels (once)."""
+        if self._workspace_created:
+            return
 
-    def _build_wandb_panels(self) -> Dict[str, Any]:
-        """Build wandb.plot.line_series panels from accumulated metric history."""
         try:
             import wandb
             if wandb.run is None:
-                return {}
+                return
+            import wandb_workspaces.workspaces as ws
+            import wandb_workspaces.reports.v2 as wr
         except ImportError:
-            return {}
+            logger.info(
+                "[PathoROB] wandb_workspaces not installed; "
+                "skipping workspace creation. Install with: "
+                "pip install wandb-workspaces"
+            )
+            return
 
         try:
-            return self._build_panels_inner(wandb)
+            self._build_workspace(wandb, ws, wr, metric_keys)
+            self._workspace_created = True
         except Exception as exc:
             logger.warning(
-                f"[PathoROB] Failed to build wandb panels: {exc}. "
+                f"[PathoROB] Failed to create wandb workspace: {exc}. "
                 "Scalar metrics are unaffected."
             )
-            return {}
 
-    def _build_panels_inner(self, wandb) -> Dict[str, Any]:
-        panels: Dict[str, Any] = {}
+    def _build_workspace(self, wandb, ws, wr, metric_keys: List[str]) -> None:
+        """Build and save a wandb workspace with LinePlot panels."""
+        prefix = "tune/pathorob/"
 
-        # Discover datasets that have history entries
-        datasets = set()
-        for key in self._metric_history:
-            # Keys are like "camelyon/student/ri"
+        # Discover datasets, models, and metric structure from logged keys
+        datasets: Dict[str, Dict[str, List[str]]] = {}
+        for key in metric_keys:
+            # Keys are like "camelyon/student/ri" or "camelyon/student/acc_id_rho0_00"
             parts = key.split("/")
-            if len(parts) >= 3:
-                datasets.add(parts[0])
+            if len(parts) < 3:
+                continue
+            ds, model, metric = parts[0], parts[1], "/".join(parts[2:])
+            datasets.setdefault(ds, {}).setdefault(model, []).append(metric)
+
+        sections: List[ws.Section] = []
 
         for dataset in sorted(datasets):
             title_prefix = dataset.capitalize()
+            panels: list = []
 
             # --- Group 1: Student vs Teacher comparison panels ---
             comparison_metrics = [
-                ("ri", "Robustness Index (RI)", "RI"),
-                ("apd_id", "APD (In-Distribution)", "APD"),
-                ("apd_ood", "APD (Out-of-Distribution)", "APD"),
-                ("apd_avg", "APD (Average)", "APD"),
-                ("clustering_score", "Clustering Score", "Score"),
+                ("ri", "Robustness Index (RI)"),
+                ("apd_id", "APD (In-Distribution)"),
+                ("apd_ood", "APD (Out-of-Distribution)"),
+                ("apd_avg", "APD (Average)"),
+                ("clustering_score", "Clustering Score"),
             ]
 
-            for metric_key, metric_label, y_label in comparison_metrics:
-                s_epochs, s_values = self._get_history(f"{dataset}/student/{metric_key}")
-                t_epochs, t_values = self._get_history(f"{dataset}/teacher/{metric_key}")
-                xs_list, ys_list, key_list = [], [], []
-                if s_epochs:
-                    xs_list.append(s_epochs)
-                    ys_list.append(s_values)
-                    key_list.append("student")
-                if t_epochs:
-                    xs_list.append(t_epochs)
-                    ys_list.append(t_values)
-                    key_list.append("teacher")
-                if not xs_list:
-                    continue
-                panel_key = f"panels/{dataset}_{metric_key}"
-                panels[panel_key] = wandb.plot.line_series(
-                    xs=xs_list,
-                    ys=ys_list,
-                    keys=key_list,
-                    title=f"{title_prefix} \u2014 {metric_label}",
-                    xname="Epoch",
-                )
+            for metric_key, metric_label in comparison_metrics:
+                y_keys = []
+                for model in ["student", "teacher"]:
+                    full_key = f"{prefix}{dataset}/{model}/{metric_key}"
+                    if (
+                        model in datasets.get(dataset, {})
+                        and metric_key in datasets[dataset][model]
+                    ):
+                        y_keys.append(full_key)
+                if y_keys:
+                    panels.append(
+                        wr.LinePlot(
+                            title=f"{title_prefix} \u2014 {metric_label}",
+                            x="Step",
+                            y=y_keys,
+                        )
+                    )
 
             # --- Group 2: Per-rho accuracy curves ---
-            for model_name in ["student", "teacher"]:
+            for model in ["student", "teacher"]:
+                model_metrics = datasets.get(dataset, {}).get(model, [])
                 for eval_type, eval_label in [("acc_id", "ID"), ("acc_ood", "OOD")]:
-                    # Find all rho keys for this dataset/model/eval_type
-                    prefix = f"{dataset}/{model_name}/{eval_type}/rho"
+                    rho_prefix = f"{eval_type}_rho"
                     rho_keys = sorted(
-                        [k for k in self._metric_history if k.startswith(prefix)]
+                        f"{prefix}{dataset}/{model}/{m}"
+                        for m in model_metrics
+                        if m.startswith(rho_prefix)
                     )
-                    if not rho_keys:
-                        continue
+                    if rho_keys:
+                        panels.append(
+                            wr.LinePlot(
+                                title=f"{title_prefix} \u2014 {model.capitalize()} Accuracy ({eval_label}) by \u03c1",
+                                x="Step",
+                                y=rho_keys,
+                            )
+                        )
 
-                    xs_list = []
-                    ys_list = []
-                    legend_keys = []
-                    for rho_key in rho_keys:
-                        # Extract rho value: "camelyon/student/acc_id/rho0_14" -> "0_14" -> "0.14"
-                        rho_suffix = rho_key[len(prefix):]
-                        rho_display = f"\u03c1={rho_suffix.replace('_', '.')}"
-                        epochs, values = self._get_history(rho_key)
-                        xs_list.append(epochs)
-                        ys_list.append(values)
-                        legend_keys.append(rho_display)
-
-                    panel_key = f"panels/{dataset}_{eval_type}_{model_name}"
-                    panels[panel_key] = wandb.plot.line_series(
-                        xs=xs_list,
-                        ys=ys_list,
-                        keys=legend_keys,
-                        title=f"{title_prefix} \u2014 {model_name.capitalize()} Accuracy ({eval_label}) by \u03c1",
-                        xname="Epoch",
+            if panels:
+                sections.append(
+                    ws.Section(
+                        name=f"PathoROB \u2014 {title_prefix}",
+                        panels=panels,
                     )
+                )
 
-        return panels
+        if not sections:
+            return
+
+        workspace = ws.Workspace(
+            entity=wandb.run.entity,
+            project=wandb.run.project,
+            name="PathoROB Tuning",
+            sections=sections,
+        )
+        workspace.save()
+        logger.info("[PathoROB] Wandb workspace created with native LinePlot panels.")
 
     @torch.no_grad()
     def run(self, student: nn.Module, teacher: nn.Module, epoch: int) -> PluginResult:
@@ -520,8 +516,9 @@ class PathoROBPlugin(BenchmarkPlugin):
                 err_file.write_text(traceback.format_exc())
                 logger.error(f"[PathoROB] {dataset_name} failed at epoch {epoch+1}: {exc}")
 
-        # Build wandb line_series panels from accumulated history
-        all_charts = self._build_wandb_panels()
+        # Create wandb workspace with native LinePlot panels (once)
+        if all_logs:
+            self._setup_wandb_workspace(list(all_logs.keys()))
 
         if all_rows:
             df = pd.DataFrame(all_rows)
@@ -541,5 +538,4 @@ class PathoROBPlugin(BenchmarkPlugin):
             name=self.name,
             payload={"rows": all_rows},
             log_metrics=all_logs,
-            log_charts=all_charts,
         )

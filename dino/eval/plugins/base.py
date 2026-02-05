@@ -13,7 +13,6 @@ class PluginResult:
     name: str
     payload: Dict[str, Any] = field(default_factory=dict)
     log_metrics: Dict[str, float] = field(default_factory=dict)
-    log_charts: Dict[str, Any] = field(default_factory=dict)
     primary: Dict[str, Dict[str, float]] | None = None
 
 

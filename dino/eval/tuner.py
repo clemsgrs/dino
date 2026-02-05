@@ -79,7 +79,6 @@ class Tuner:
         out: Dict[str, Any] = {
             "plugins": {},
             "log_metrics": {},
-            "log_charts": {},
             "primary": None,
         }
 
@@ -92,9 +91,6 @@ class Tuner:
 
             for k, v in result.log_metrics.items():
                 out["log_metrics"][f"{plugin.name}/{k}"] = float(v)
-
-            for k, v in result.log_charts.items():
-                out["log_charts"][f"{plugin.name}/{k}"] = v
 
             if out["primary"] is None and result.primary is not None:
                 out["primary"] = result.primary
@@ -113,9 +109,6 @@ class Tuner:
 
     def get_log_metrics(self, results: Dict[str, Any]) -> Dict[str, float]:
         return results.get("log_metrics", {})
-
-    def get_log_charts(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        return results.get("log_charts", {})
 
     def _persist_unified_metrics(self, results: Dict[str, Any], epoch: int) -> None:
         if self.metrics_dir is None:
