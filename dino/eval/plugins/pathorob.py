@@ -21,6 +21,7 @@ from dino.eval.pathorob.apd import compute_apd
 from dino.eval.pathorob.clustering import compute_clustering_score
 from dino.eval.pathorob.datasets import load_manifest
 from dino.eval.pathorob.ri import compute_ri
+from dino.eval.pathorob.allocations import get_paper_metadata
 from dino.eval.pathorob.splits import generate_apd_splits
 
 from .base import BenchmarkPlugin, PluginResult
@@ -138,9 +139,38 @@ class PathoROBPlugin(BenchmarkPlugin):
             ),
         }
 
+    def _validate_paper_mode_centers(self, dataset_name: str, dataset_cfg: DictConfig) -> None:
+        """Validate that config centers match paper specification when using paper mode."""
+        mode = str(self.cfg.apd.get("mode", "paper"))
+        if mode != "paper":
+            return
+
+        try:
+            paper_classes, paper_id, paper_ood = get_paper_metadata(dataset_name)
+        except ValueError:
+            # Dataset not in paper, can't validate
+            return
+
+        config_id = sorted(list(dataset_cfg.id_centers))
+        config_ood = sorted(list(dataset_cfg.ood_centers))
+
+        if config_id != sorted(paper_id):
+            raise ValueError(
+                f"[APD] Paper mode requires id_centers={paper_id} for {dataset_name}, "
+                f"but config has {config_id}. Use mode='interpolate' for custom centers."
+            )
+        if config_ood != sorted(paper_ood):
+            raise ValueError(
+                f"[APD] Paper mode requires ood_centers={paper_ood} for {dataset_name}, "
+                f"but config has {config_ood}. Use mode='interpolate' for custom centers."
+            )
+
     def _ensure_apd_splits(self, dataset_name: str, dataset_cfg: DictConfig, manifest_df: pd.DataFrame) -> List[pd.DataFrame]:
         if dataset_name in self._apd_split_cache:
             return self._apd_split_cache[dataset_name]
+
+        # Validate centers match paper spec when in paper mode
+        self._validate_paper_mode_centers(dataset_name, dataset_cfg)
 
         split_dir = self.splits_dir / dataset_name
         metadata_file = split_dir / "split_params.json"
