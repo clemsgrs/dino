@@ -373,7 +373,7 @@ def generate_apd_splits(
 
     all_splits: List[pd.DataFrame] = []
 
-    for rep in range(repetitions):
+    for i, rep in enumerate(range(repetitions)):
         rep_rng = np.random.default_rng(seed + rep)
 
         train_pool, id_test_df = _choose_train_id_slides(
@@ -427,9 +427,9 @@ def generate_apd_splits(
                             # Reduce target to fit
                             target_train_total = int(avail[i, j] / needed_ratio)
 
-            if target_train_total < paper_total:
+            if target_train_total < paper_total and i == 0:
                 logger.warning(f"[APD] Paper mode: insufficient data, scaling from {paper_total} to {target_train_total} training samples")
-            else:
+            elif i == 0:
                 logger.info(f"[APD] Paper mode: using {target_train_total} training samples")
         else:
             # Interpolate mode: use half of minimum cell capacity

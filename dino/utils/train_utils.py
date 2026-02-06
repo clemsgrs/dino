@@ -42,7 +42,7 @@ def train_one_epoch(
         data_loader,
         desc=(f"Epoch [{epoch+1}/{nepochs}]"),
         unit=" it",
-        ncols=80,
+        ncols=100,
         unit_scale=1,
         total=len(data_loader),
         leave=False,
