@@ -243,14 +243,11 @@ class PathoROBPlugin(BenchmarkPlugin):
             model_feats = features_by_model[model_name]
 
             if bool(self.cfg.ri.enable):
-                fixed_k = int(self.cfg.ri.fixed_k.get(dataset_name, self.cfg.ri.default_k))
                 ri = compute_ri(
                     dataset_name=dataset_name,
                     model_name=model_name,
                     features=model_feats,
                     manifest_df=manifest_df,
-                    policy=str(self.cfg.ri.k_selection_policy),
-                    fixed_k=fixed_k,
                     k_candidates=list(self.cfg.ri.k_candidates),
                     max_pairs=(None if self.cfg.get("max_pairs", 0) <= 0 else int(self.cfg.get("max_pairs", 0))),
                     random_state=int(self.cfg.seed) + epoch,
@@ -395,43 +392,59 @@ class PathoROBPlugin(BenchmarkPlugin):
             )
 
     @staticmethod
-    def _style_panel(panel, wr) -> None:
-        """Patch a LinePlot panel with per-metric colors and short legend labels."""
+    def _style_panel_labels(panel, wr) -> None:
+        """Patch a LinePlot panel with short legend labels."""
         if not isinstance(panel, wr.LinePlot) or len(panel.y) <= 1:
             return
-        # Qualitative palette (colorblind-friendly, from ColorBrewer Dark2 + Set1)
-        palette = [
-            "#1b9e77", "#d95f02", "#7570b3", "#e7298a",
-            "#66a61e", "#e6ab02", "#a6761d", "#666666",
-            "#377eb8", "#e41a1c", "#984ea3", "#ff7f00",
-        ]
-        colors = {}
         titles = {}
-        for i, key in enumerate(panel.y):
-            colors[key] = palette[i % len(palette)]
-            # Derive short label from the metric key suffix
+        for key in panel.y:
             # e.g. "tune/pathorob/camelyon/student/ri" -> "student"
             #      "tune/pathorob/camelyon/student/acc_id_rho0_14" -> "ρ=0.14"
             suffix = key.rsplit("/", 1)[-1]
             if suffix.startswith("acc_id_rho") or suffix.startswith("acc_ood_rho"):
                 rho_val = suffix.split("rho", 1)[1].replace("_", ".")
                 titles[key] = f"\u03c1={rho_val}"
-            elif suffix in ("student", "teacher"):
-                titles[key] = suffix
             else:
-                # For keys like .../student/ri, the model name is second-to-last
                 parts = key.rsplit("/", 2)
                 if len(parts) >= 2 and parts[-2] in ("student", "teacher"):
                     titles[key] = parts[-2]
-
+        if not titles:
+            return
         original_to_model = panel._to_model
         def patched_to_model():
             model = original_to_model()
-            model.config.override_colors = colors
-            if titles:
-                model.config.override_series_titles = titles
+            model.config.override_series_titles = titles
             return model
-        panel._to_model = patched_to_model
+        object.__setattr__(panel, "_to_model", patched_to_model)
+
+    @staticmethod
+    def _find_existing_workspace_id(wandb, entity: str, project: str) -> Tuple[str, str]:
+        """Return (view_id, view_name) for an existing 'PathoROB' workspace.
+
+        Returns (None, None) if no matching workspace is found.
+        """
+        from wandb_gql import gql
+
+        query = gql("""
+            query Views($entityName: String, $name: String, $viewType: String) {
+                project(name: $name, entityName: $entityName) {
+                    allViews(viewType: $viewType) {
+                        edges { node { id name displayName } }
+                    }
+                }
+            }
+        """)
+        api = wandb.Api()
+        resp = api.client.execute(query, {
+            "entityName": entity,
+            "name": project,
+            "viewType": "project-view",
+        })
+        for edge in resp.get("project", {}).get("allViews", {}).get("edges", []):
+            node = edge["node"]
+            if node.get("displayName") == "PathoROB":
+                return node["id"], node["name"]
+        return None, None
 
     def _build_workspace(self, wandb, ws, wr, metric_keys: List[str]) -> None:
         """Build and save a wandb workspace with LinePlot panels."""
@@ -512,32 +525,84 @@ class PathoROBPlugin(BenchmarkPlugin):
         if not sections:
             return
 
-        # Add panels to the current run's workspace instead of creating a separate one
-        run_url = wandb.run.url
-        # run.url points to the run page; workspace URL is the project page
-        project_url = run_url.rsplit("/runs/", 1)[0]
-        workspace = ws.Workspace.from_url(project_url)
-
-        # Remove any existing PathoROB sections to avoid duplicates on re-run
-        pathorob_prefix = "PathoROB"
-        workspace.sections = [
-            s for s in workspace.sections
-            if not s.name.startswith(pathorob_prefix)
-        ]
-
-        # Inject per-metric colors into all LinePlot panels
+        # Inject short legend labels into LinePlot panels
         for section in sections:
             for panel in section.panels:
-                self._style_panel(panel, wr)
+                self._style_panel_labels(panel, wr)
+
+        # Create or update a saved workspace named "PathoROB".
+        # We query the wandb API for an existing workspace by displayName
+        # so that multiple runs (each with a unique output_dir) reuse the
+        # same saved view instead of creating duplicates.
+        entity = wandb.run.entity
+        project = wandb.run.project
+
+        existing_id, existing_name = self._find_existing_workspace_id(
+            wandb, entity, project,
+        )
+
+        workspace = ws.Workspace(entity=entity, project=project, name="PathoROB")
+
+        # Remove any existing PathoROB sections to avoid duplicates on re-run
+        workspace.sections = [
+            s for s in workspace.sections
+            if not s.name.startswith("PathoROB")
+        ]
 
         # Prepend our sections so they appear at the top
         workspace.sections = sections + workspace.sections
 
-        import io
-        import contextlib
-        with contextlib.redirect_stdout(io.StringIO()):
-            workspace.save()
-        logger.info("[PathoROB] Wandb workspace updated with PathoROB panels.")
+        # Custom save: we replicate upsert_view2 so we can inject the
+        # existing workspace id (for dedup) into the GraphQL mutation.
+        from wandb_workspaces.workspaces import internal as ws_internal
+        from wandb_gql import gql
+
+        view = workspace._to_model()
+        if existing_id:
+            view.id = existing_id
+            view.name = existing_name
+        elif not view.name:
+            view.name = ws_internal._generate_view_name()
+
+        spec_str = view.spec.model_dump_json(by_alias=True, exclude_none=True)
+
+        query = gql(
+            """
+            mutation UpsertView2(
+                $id: ID, $entityName: String, $projectName: String,
+                $type: String, $name: String, $displayName: String,
+                $description: String, $spec: String
+            ) {
+                upsertView(input: {
+                    id: $id, entityName: $entityName,
+                    projectName: $projectName, name: $name,
+                    displayName: $displayName, description: $description,
+                    type: $type, spec: $spec, createdUsing: WANDB_SDK
+                }) {
+                    view { id name }
+                    inserted
+                }
+            }
+            """
+        )
+
+        api = wandb.Api()
+        variables = {
+            "entityName": view.entity,
+            "projectName": view.project,
+            "name": view.name,
+            "displayName": view.display_name,
+            "type": "project-view",
+            "description": "",
+            "spec": spec_str,
+        }
+        if view.id:
+            variables["id"] = view.id
+
+        response = api.client.execute(query, variables)
+        inserted = response["upsertView"].get("inserted", True)
+        action = "created" if inserted else "updated"
+        logger.info(f"[PathoROB] Wandb workspace {action} with PathoROB panels.")
 
     @torch.no_grad()
     def run(self, student: nn.Module, teacher: nn.Module, epoch: int) -> PluginResult:
