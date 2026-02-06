@@ -477,8 +477,11 @@ class PathoROBPlugin(BenchmarkPlugin):
             name="PathoROB Tuning",
             sections=sections,
         )
-        workspace.save()
-        logger.info("[PathoROB] Wandb workspace created with native LinePlot panels.")
+        import io
+        import contextlib
+        with contextlib.redirect_stdout(io.StringIO()):
+            workspace.save()
+        logger.info(f"[PathoROB] Wandb workspace created: {workspace.url}")
 
     @torch.no_grad()
     def run(self, student: nn.Module, teacher: nn.Module, epoch: int) -> PluginResult:
