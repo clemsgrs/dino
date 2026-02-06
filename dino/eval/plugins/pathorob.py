@@ -473,17 +473,27 @@ class PathoROBPlugin(BenchmarkPlugin):
         if not sections:
             return
 
-        workspace = ws.Workspace(
-            entity=wandb.run.entity,
-            project=wandb.run.project,
-            name="PathoROB Tuning",
-            sections=sections,
-        )
+        # Add panels to the current run's workspace instead of creating a separate one
+        run_url = wandb.run.url
+        # run.url points to the run page; workspace URL is the project page
+        project_url = run_url.rsplit("/runs/", 1)[0]
+        workspace = ws.Workspace.from_url(project_url)
+
+        # Remove any existing PathoROB sections to avoid duplicates on re-run
+        pathorob_prefix = "PathoROB"
+        workspace.sections = [
+            s for s in workspace.sections
+            if not s.name.startswith(pathorob_prefix)
+        ]
+
+        # Prepend our sections so they appear at the top
+        workspace.sections = sections + workspace.sections
+
         import io
         import contextlib
         with contextlib.redirect_stdout(io.StringIO()):
             workspace.save()
-        logger.info(f"[PathoROB] Wandb workspace created: {workspace.url}")
+        logger.info("[PathoROB] Wandb workspace updated with PathoROB panels.")
 
     @torch.no_grad()
     def run(self, student: nn.Module, teacher: nn.Module, epoch: int) -> PluginResult:
