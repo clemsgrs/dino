@@ -118,8 +118,6 @@ def compute_ri(
     model_name: str,
     features: np.ndarray,
     manifest_df: pd.DataFrame,
-    policy: str,
-    fixed_k: int,
     k_candidates: Sequence[int],
     max_pairs: Optional[int],
     random_state: int,
@@ -132,17 +130,12 @@ def compute_ri(
     if not pairs:
         raise RuntimeError(f"{dataset_name}: no valid 2x2 pairs for RI")
 
-    if policy == "paper_median_fixed":
-        k = int(fixed_k)
-    elif policy == "knn_bacc":
-        k = _optimal_k_by_knn_balanced_accuracy(
-            features=features,
-            labels=pd.factorize(df["label"])[0].astype(int),
-            slide_ids=df["slide_id"].astype(str).values,
-            k_values=k_candidates,
-        )
-    else:
-        raise ValueError(f"Unsupported RI k-selection policy: {policy}")
+    k = _optimal_k_by_knn_balanced_accuracy(
+        features=features,
+        labels=pd.factorize(df["label"])[0].astype(int),
+        slide_ids=df["slide_id"].astype(str).values,
+        k_values=k_candidates,
+    )
 
     values: List[float] = []
     for pair in pairs:
