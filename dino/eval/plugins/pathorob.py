@@ -395,22 +395,41 @@ class PathoROBPlugin(BenchmarkPlugin):
             )
 
     @staticmethod
-    def _inject_metric_colors(panel, wr) -> None:
-        """Patch a LinePlot panel so each y-metric gets a distinct color."""
+    def _style_panel(panel, wr) -> None:
+        """Patch a LinePlot panel with per-metric colors and short legend labels."""
         if not isinstance(panel, wr.LinePlot) or len(panel.y) <= 1:
             return
-        # Qualitative palette (colorblind-friendly, from ColorBrewer Set2 + Dark2)
+        # Qualitative palette (colorblind-friendly, from ColorBrewer Dark2 + Set1)
         palette = [
             "#1b9e77", "#d95f02", "#7570b3", "#e7298a",
             "#66a61e", "#e6ab02", "#a6761d", "#666666",
             "#377eb8", "#e41a1c", "#984ea3", "#ff7f00",
         ]
-        colors = {key: palette[i % len(palette)] for i, key in enumerate(panel.y)}
-        # Wrap _to_model to inject override_colors into the internal config
+        colors = {}
+        titles = {}
+        for i, key in enumerate(panel.y):
+            colors[key] = palette[i % len(palette)]
+            # Derive short label from the metric key suffix
+            # e.g. "tune/pathorob/camelyon/student/ri" -> "student"
+            #      "tune/pathorob/camelyon/student/acc_id_rho0_14" -> "ρ=0.14"
+            suffix = key.rsplit("/", 1)[-1]
+            if suffix.startswith("acc_id_rho") or suffix.startswith("acc_ood_rho"):
+                rho_val = suffix.split("rho", 1)[1].replace("_", ".")
+                titles[key] = f"\u03c1={rho_val}"
+            elif suffix in ("student", "teacher"):
+                titles[key] = suffix
+            else:
+                # For keys like .../student/ri, the model name is second-to-last
+                parts = key.rsplit("/", 2)
+                if len(parts) >= 2 and parts[-2] in ("student", "teacher"):
+                    titles[key] = parts[-2]
+
         original_to_model = panel._to_model
         def patched_to_model():
             model = original_to_model()
             model.config.override_colors = colors
+            if titles:
+                model.config.override_series_titles = titles
             return model
         panel._to_model = patched_to_model
 
@@ -509,7 +528,7 @@ class PathoROBPlugin(BenchmarkPlugin):
         # Inject per-metric colors into all LinePlot panels
         for section in sections:
             for panel in section.panels:
-                self._inject_metric_colors(panel, wr)
+                self._style_panel(panel, wr)
 
         # Prepend our sections so they appear at the top
         workspace.sections = sections + workspace.sections
