@@ -54,7 +54,8 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 WORKDIR /opt/app/
 
 # you can add any Python dependencies to requirements.in
-RUN python -m pip install --upgrade pip setuptools pip-tools \
+RUN python -m pip install --upgrade "pip<25.3" "setuptools" "wheel" \
+    && python -m pip install --upgrade "pip-tools" \
     && rm -rf /home/user/.cache/pip
 
 # install requirements
