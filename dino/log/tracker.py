@@ -1,3 +1,5 @@
+import numbers
+
 import wandb
 import subprocess
 
@@ -88,5 +90,6 @@ def update_log_dict(
     step: Optional[str] = "step",
 ):
     for r, v in results.items():
-        wandb.define_metric(f"{prefix}/{r}", step_metric=step)
+        if isinstance(v, numbers.Number):
+            wandb.define_metric(f"{prefix}/{r}", step_metric=step)
         log_dict.update({f"{prefix}/{r}": v})

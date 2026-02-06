@@ -9,4 +9,6 @@ torchvision
 tqdm
 scikit-learn
 wandb
+wandb-workspaces
+rich
 omegaconf

@@ -4,7 +4,6 @@ import json
 import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-import warnings
 import logging
 
 import numpy as np
@@ -63,6 +62,7 @@ class PathoROBPlugin(BenchmarkPlugin):
 
         self._manifest_cache: Dict[str, pd.DataFrame] = {}
         self._apd_split_cache: Dict[str, List[pd.DataFrame]] = {}
+        self._workspace_created: bool = False
 
     def should_run(self, epoch: int) -> bool:
         return ((epoch + 1) % int(self.cfg.tune_every)) == 0
@@ -243,14 +243,11 @@ class PathoROBPlugin(BenchmarkPlugin):
             model_feats = features_by_model[model_name]
 
             if bool(self.cfg.ri.enable):
-                fixed_k = int(self.cfg.ri.fixed_k.get(dataset_name, self.cfg.ri.default_k))
                 ri = compute_ri(
                     dataset_name=dataset_name,
                     model_name=model_name,
                     features=model_feats,
                     manifest_df=manifest_df,
-                    policy=str(self.cfg.ri.k_selection_policy),
-                    fixed_k=fixed_k,
                     k_candidates=list(self.cfg.ri.k_candidates),
                     max_pairs=(None if self.cfg.get("max_pairs", 0) <= 0 else int(self.cfg.get("max_pairs", 0))),
                     random_state=int(self.cfg.seed) + epoch,
@@ -365,6 +362,248 @@ class PathoROBPlugin(BenchmarkPlugin):
 
         return metric_rows, log_metrics
 
+    def _setup_wandb_workspace(self, metric_keys: List[str]) -> None:
+        """Create a wandb workspace with native LinePlot panels (once)."""
+        if self._workspace_created:
+            return
+
+        try:
+            import wandb
+            if wandb.run is None:
+                return
+            import wandb_workspaces.workspaces as ws
+            import wandb_workspaces.reports.v2 as wr
+        except ImportError:
+            logger.info(
+                "[PathoROB] wandb_workspaces not installed; "
+                "skipping workspace creation. Install with: "
+                "pip install wandb-workspaces"
+            )
+            self._workspace_created = True
+            return
+
+        try:
+            self._build_workspace(wandb, ws, wr, metric_keys)
+            self._workspace_created = True
+        except Exception as exc:
+            logger.warning(
+                f"[PathoROB] Failed to create wandb workspace: {exc}. "
+                "Scalar metrics are unaffected."
+            )
+
+    @staticmethod
+    def _style_panel_labels(panel, wr) -> None:
+        """Patch a LinePlot panel with short legend labels."""
+        if not isinstance(panel, wr.LinePlot) or len(panel.y) <= 1:
+            return
+        titles = {}
+        for key in panel.y:
+            # e.g. "tune/pathorob/camelyon/student/ri" -> "student"
+            #      "tune/pathorob/camelyon/student/acc_id_rho0_14" -> "ρ=0.14"
+            suffix = key.rsplit("/", 1)[-1]
+            if suffix.startswith("acc_id_rho") or suffix.startswith("acc_ood_rho"):
+                rho_val = suffix.split("rho", 1)[1].replace("_", ".")
+                titles[key] = f"\u03c1={rho_val}"
+            else:
+                parts = key.rsplit("/", 2)
+                if len(parts) >= 2 and parts[-2] in ("student", "teacher"):
+                    titles[key] = parts[-2]
+        if not titles:
+            return
+        original_to_model = panel._to_model
+        def patched_to_model():
+            model = original_to_model()
+            model.config.override_series_titles = titles
+            return model
+        object.__setattr__(panel, "_to_model", patched_to_model)
+
+    @staticmethod
+    def _find_existing_workspace_id(wandb, entity: str, project: str) -> Tuple[str, str]:
+        """Return (view_id, view_name) for an existing 'PathoROB' workspace.
+
+        Returns (None, None) if no matching workspace is found.
+        """
+        from wandb_gql import gql
+
+        query = gql("""
+            query Views($entityName: String, $name: String, $viewType: String) {
+                project(name: $name, entityName: $entityName) {
+                    allViews(viewType: $viewType) {
+                        edges { node { id name displayName } }
+                    }
+                }
+            }
+        """)
+        api = wandb.Api()
+        resp = api.client.execute(query, {
+            "entityName": entity,
+            "name": project,
+            "viewType": "project-view",
+        })
+        for edge in resp.get("project", {}).get("allViews", {}).get("edges", []):
+            node = edge["node"]
+            if node.get("displayName") == "PathoROB":
+                return node["id"], node["name"]
+        return None, None
+
+    def _build_workspace(self, wandb, ws, wr, metric_keys: List[str]) -> None:
+        """Build and save a wandb workspace with LinePlot panels."""
+        prefix = "tune/pathorob/"
+
+        # Discover datasets, models, and metric structure from logged keys
+        datasets: Dict[str, Dict[str, List[str]]] = {}
+        for key in metric_keys:
+            # Keys are like "camelyon/student/ri" or "camelyon/student/acc_id_rho0_00"
+            parts = key.split("/")
+            if len(parts) < 3:
+                continue
+            ds, model, metric = parts[0], parts[1], "/".join(parts[2:])
+            datasets.setdefault(ds, {}).setdefault(model, []).append(metric)
+
+        sections: List[ws.Section] = []
+
+        for dataset in sorted(datasets):
+            title_prefix = dataset.capitalize()
+            panels: list = []
+
+            # --- Group 1: Student vs Teacher comparison panels ---
+            comparison_metrics = [
+                ("ri", "Robustness Index (RI)"),
+                ("apd_id", "APD (In-Distribution)"),
+                ("apd_ood", "APD (Out-of-Distribution)"),
+                ("apd_avg", "APD (Average)"),
+                ("clustering_score", "Clustering Score"),
+            ]
+
+            for metric_key, metric_label in comparison_metrics:
+                y_keys = []
+                for model in ["student", "teacher"]:
+                    full_key = f"{prefix}{dataset}/{model}/{metric_key}"
+                    if (
+                        model in datasets.get(dataset, {})
+                        and metric_key in datasets[dataset][model]
+                    ):
+                        y_keys.append(full_key)
+                if y_keys:
+                    panels.append(
+                        wr.LinePlot(
+                            title=f"{title_prefix} \u2014 {metric_label}",
+                            x="Step",
+                            y=y_keys,
+                        )
+                    )
+
+            # --- Group 2: Per-rho accuracy curves ---
+            for model in ["student", "teacher"]:
+                model_metrics = datasets.get(dataset, {}).get(model, [])
+                for eval_type, eval_label in [("acc_id", "ID"), ("acc_ood", "OOD")]:
+                    rho_prefix = f"{eval_type}_rho"
+                    rho_keys = sorted(
+                        f"{prefix}{dataset}/{model}/{m}"
+                        for m in model_metrics
+                        if m.startswith(rho_prefix)
+                    )
+                    if rho_keys:
+                        panels.append(
+                            wr.LinePlot(
+                                title=f"{title_prefix} \u2014 {model.capitalize()} Accuracy ({eval_label}) by \u03c1",
+                                x="Step",
+                                y=rho_keys,
+                            )
+                        )
+
+            if panels:
+                sections.append(
+                    ws.Section(
+                        name=f"PathoROB \u2014 {title_prefix}",
+                        panels=panels,
+                        is_open=True,
+                        pinned=True,
+                    )
+                )
+
+        if not sections:
+            return
+
+        # Inject short legend labels into LinePlot panels
+        for section in sections:
+            for panel in section.panels:
+                self._style_panel_labels(panel, wr)
+
+        # Create or update a saved workspace named "PathoROB".
+        # We query the wandb API for an existing workspace by displayName
+        # so that multiple runs (each with a unique output_dir) reuse the
+        # same saved view instead of creating duplicates.
+        entity = wandb.run.entity
+        project = wandb.run.project
+
+        existing_id, existing_name = self._find_existing_workspace_id(
+            wandb, entity, project,
+        )
+
+        workspace = ws.Workspace(entity=entity, project=project, name="PathoROB")
+
+        # Remove any existing PathoROB sections to avoid duplicates on re-run
+        workspace.sections = [
+            s for s in workspace.sections
+            if not s.name.startswith("PathoROB")
+        ]
+
+        # Prepend our sections so they appear at the top
+        workspace.sections = sections + workspace.sections
+
+        # Custom save: we replicate upsert_view2 so we can inject the
+        # existing workspace id (for dedup) into the GraphQL mutation.
+        from wandb_workspaces.workspaces import internal as ws_internal
+        from wandb_gql import gql
+
+        view = workspace._to_model()
+        if existing_id:
+            view.id = existing_id
+            view.name = existing_name
+        elif not view.name:
+            view.name = ws_internal._generate_view_name()
+
+        spec_str = view.spec.model_dump_json(by_alias=True, exclude_none=True)
+
+        query = gql(
+            """
+            mutation UpsertView2(
+                $id: ID, $entityName: String, $projectName: String,
+                $type: String, $name: String, $displayName: String,
+                $description: String, $spec: String
+            ) {
+                upsertView(input: {
+                    id: $id, entityName: $entityName,
+                    projectName: $projectName, name: $name,
+                    displayName: $displayName, description: $description,
+                    type: $type, spec: $spec, createdUsing: WANDB_SDK
+                }) {
+                    view { id name }
+                    inserted
+                }
+            }
+            """
+        )
+
+        api = wandb.Api()
+        variables = {
+            "entityName": view.entity,
+            "projectName": view.project,
+            "name": view.name,
+            "displayName": view.display_name,
+            "type": "project-view",
+            "description": "",
+            "spec": spec_str,
+        }
+        if view.id:
+            variables["id"] = view.id
+
+        response = api.client.execute(query, variables)
+        inserted = response["upsertView"].get("inserted", True)
+        action = "created" if inserted else "updated"
+        logger.info(f"[PathoROB] Wandb workspace {action} with PathoROB panels.")
+
     @torch.no_grad()
     def run(self, student: nn.Module, teacher: nn.Module, epoch: int) -> PluginResult:
         if not is_main_process():
@@ -400,7 +639,11 @@ class PathoROBPlugin(BenchmarkPlugin):
             except Exception as exc:
                 err_file = self.metrics_dir / f"epoch_{epoch+1:04d}_{dataset_name}_error.txt"
                 err_file.write_text(traceback.format_exc())
-                logging.info(f"[PathoROB] {dataset_name} failed at epoch {epoch+1}: {exc}")
+                logger.error(f"[PathoROB] {dataset_name} failed at epoch {epoch+1}: {exc}")
+
+        # Create wandb workspace with native LinePlot panels (once)
+        if all_logs:
+            self._setup_wandb_workspace(list(all_logs.keys()))
 
         if all_rows:
             df = pd.DataFrame(all_rows)
@@ -416,4 +659,8 @@ class PathoROBPlugin(BenchmarkPlugin):
             else:
                 df.to_csv(roll_path, index=False)
 
-        return PluginResult(name=self.name, payload={"rows": all_rows}, log_metrics=all_logs)
+        return PluginResult(
+            name=self.name,
+            payload={"rows": all_rows},
+            log_metrics=all_logs,
+        )
