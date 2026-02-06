@@ -465,6 +465,8 @@ class PathoROBPlugin(BenchmarkPlugin):
                     ws.Section(
                         name=f"PathoROB \u2014 {title_prefix}",
                         panels=panels,
+                        is_open=True,
+                        pinned=True,
                     )
                 )
 
