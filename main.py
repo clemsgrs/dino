@@ -332,6 +332,21 @@ def main(args):
         if is_main_process():
             logger.info("Unified tuner initialized")
 
+    # Baseline evaluation with random weights (before any training)
+    if tuner is not None and epochs_run == 0:
+        baseline_results = tuner.tune(student, teacher, epoch=-1)
+        if is_main_process():
+            if cfg.wandb.enable:
+                baseline_log = {"epoch": 0}
+                update_log_dict("tune", tuner.get_log_metrics(baseline_results), baseline_log, step="epoch")
+                wandb.log(baseline_log, step=0)
+            else:
+                logger.info("Baseline tuning results (random weights):")
+                for metric_name, value in tuner.get_log_metrics(baseline_results).items():
+                    logger.info(f"  {metric_name}: {value}")
+        if is_enabled_and_multiple_gpus():
+            torch.distributed.barrier()
+
     freeze_last_layer_iter = int(cfg.training.freeze_last_layer_pct * total_iterations)
     save_every_iter = int(cfg.training.save_every_pct * total_iterations)
     start_time = time.time()
@@ -351,7 +366,7 @@ def main(args):
         for epoch in t:
             epoch_start_time = time.time()
             if cfg.wandb.enable and is_main_process():
-                log_dict = {"epoch": epoch}
+                log_dict = {"epoch": epoch + 1}
 
             if is_enabled_and_multiple_gpus():
                 data_loader.sampler.set_epoch(epoch)
@@ -406,7 +421,7 @@ def main(args):
                     if cfg.wandb.enable:
                         update_log_dict("tune", tuner.get_log_metrics(tune_results), log_dict, step="epoch")
                     else:
-                        logger.info(f"Tuning results at epoch {epoch}:")
+                        logger.info(f"Tuning results at epoch {epoch + 1}:")
                         for metric_name, value in tuner.get_log_metrics(tune_results).items():
                             logger.info(f"  {metric_name}: {value}")
                     # Get primary benchmark results for early stopping
@@ -417,7 +432,7 @@ def main(args):
 
             # log to wandb
             if is_main_process() and cfg.wandb.enable:
-                wandb.log(log_dict, step=epoch)
+                wandb.log(log_dict, step=epoch + 1)
 
             log_stats = {
                 **{f"train_{k}": v for k, v in train_stats.items()},

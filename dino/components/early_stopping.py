@@ -68,7 +68,7 @@ class EarlyStoppingDINO:
                     self.early_stop = True
 
         if self.save_every and epoch % self.save_every == 0:
-            fname = f"snapshot_epoch_{epoch:03}.pt"
+            fname = f"snapshot_epoch_{epoch+1:03}.pt"
             torch.save(snapshot, Path(self.checkpoint_dir, fname))
 
         # override latest
