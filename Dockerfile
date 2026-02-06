@@ -69,7 +69,3 @@ RUN CUDA_IDENTIFIER_PYTORCH=`echo "cu${CUDA_MAJOR_VERSION}" | sed "s|\.||g" | cu
 
 # expose port for ssh and jupyter
 EXPOSE 22 8888
-
-# configure entrypoint
-COPY run.sh .
-ENTRYPOINT ["/bin/bash", "/opt/app/run.sh"]
