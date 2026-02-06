@@ -94,7 +94,7 @@ tuning:
           linear: {epochs: 100, lr: 0.01, batch_size: 256}
     - type: "pathorob"
       enable: true
-      tune_every: 1
+      tune_every: 5
       seed: 42
       max_pairs: 0  # max (2 classes × 2 centers) pairs for RI/clustering; 0 = no limit
       transforms:
@@ -104,10 +104,6 @@ tuning:
       batch_size_per_gpu: 32
       ri:
         enable: true
-        k_selection_policy: "paper_median_fixed"
-        default_k: 5
-        fixed_k:
-          camelyon: 5
         k_candidates: [3, 5, 7, 10, 15]
       apd:
         enable: true
