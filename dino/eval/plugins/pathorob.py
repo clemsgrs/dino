@@ -394,6 +394,26 @@ class PathoROBPlugin(BenchmarkPlugin):
                 "Scalar metrics are unaffected."
             )
 
+    @staticmethod
+    def _inject_metric_colors(panel, wr) -> None:
+        """Patch a LinePlot panel so each y-metric gets a distinct color."""
+        if not isinstance(panel, wr.LinePlot) or len(panel.y) <= 1:
+            return
+        # Qualitative palette (colorblind-friendly, from ColorBrewer Set2 + Dark2)
+        palette = [
+            "#1b9e77", "#d95f02", "#7570b3", "#e7298a",
+            "#66a61e", "#e6ab02", "#a6761d", "#666666",
+            "#377eb8", "#e41a1c", "#984ea3", "#ff7f00",
+        ]
+        colors = {key: palette[i % len(palette)] for i, key in enumerate(panel.y)}
+        # Wrap _to_model to inject override_colors into the internal config
+        original_to_model = panel._to_model
+        def patched_to_model():
+            model = original_to_model()
+            model.config.override_colors = colors
+            return model
+        panel._to_model = patched_to_model
+
     def _build_workspace(self, wandb, ws, wr, metric_keys: List[str]) -> None:
         """Build and save a wandb workspace with LinePlot panels."""
         prefix = "tune/pathorob/"
@@ -485,6 +505,11 @@ class PathoROBPlugin(BenchmarkPlugin):
             s for s in workspace.sections
             if not s.name.startswith(pathorob_prefix)
         ]
+
+        # Inject per-metric colors into all LinePlot panels
+        for section in sections:
+            for panel in section.panels:
+                self._inject_metric_colors(panel, wr)
 
         # Prepend our sections so they appear at the top
         workspace.sections = sections + workspace.sections
